@@ -1,0 +1,66 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBDcmVhdGUgYW4gZW1wdHkgZWRnZSBsaXN0XG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcbkluZF9FZGdlX2FsdGVyZWRfVGFibGUgPC0gbGlzdCgpXG5cbiMgbG9vcCB0aHJvdWdoIGFuZCBleHRyYWN0IGVkZ2VzXG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcbmZvciAoaSBpbiBzZXFfYWxvbmcoRGF0YXNldDJmX1Jlc1tbXCJJbmRfTmV0c19hbHRcIl1dKSkge1xuICAgIGNvdl9tYXRyaXggPC0gRGF0YXNldDJmX1Jlc1tbXCJJbmRfTmV0c19hbHRcIl1dW1tpXV1cbiAgICBuZXR3b3JrX25hbWUgPC0gbmFtZXMoRGF0YXNldDJmX1Jlc1tbXCJJbmRfTmV0c19hbHRcIl1dW2ldKVxuICAgIGVkZ2VfdGFibGVfbmFtZSA8LSBwYXN0ZTAobmV0d29ya19uYW1lKVxuICAgIGRpYWdvbmFsX2luZGljZXMgPC0gMTpucm93KGNvdl9tYXRyaXgpXG4gICAgY292X21hdHJpeFtjYmluZChkaWFnb25hbF9pbmRpY2VzLCBkaWFnb25hbF9pbmRpY2VzKV0gPC0gMFxuICAgIGNvdl9tYXRyaXhbbG93ZXIudHJpKGNvdl9tYXRyaXgpXSA8LSAwXG4gICAgYWRqIDwtIGFzLmRhdGEuZnJhbWUoYXMudGFibGUoY292X21hdHJpeCkpXG4gICAgY29sbmFtZXMoYWRqKSA8LSBjKFwiU291cmNlXCIsIFwiU2lua1wiLCBcIkVkZ2Vfd2VpZ2h0XCIpXG4gICAgYWRqIDwtIGFkalthZGokRWRnZV93ZWlnaHQgIT0gMCwgXVxuICAgIGFkaiRTYW1wbGVJRCA8LSBuZXR3b3JrX25hbWVcbiAgICBJbmRfRWRnZV9hbHRlcmVkX1RhYmxlW1tlZGdlX3RhYmxlX25hbWVdXSA8LSBhZGpcbiAgfVxuRGF0YXNldDJmX1JlcyRJbmRfRWRnZV9hbHRlcmVkX1RhYmxlIDwtIEluZF9FZGdlX2FsdGVyZWRfVGFibGVcbk1lcmdlZF9FZGdlX1RhYmxlIDwtIGRvLmNhbGwocmJpbmQsIEluZF9FZGdlX2FsdGVyZWRfVGFibGUpXG5cblxuIyBtZXJnZSB3aXRoIHNhbXBsZSBkYXRhXG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcbkFsdGVyZWRfZGF0YSA8LSBtZXJnZShNZXJnZWRfRWRnZV9UYWJsZSwgc2FtcGxlX2RhdGEsIGJ5PVwiU2FtcGxlSURcIilcbiMgcmVuYW1lIEVkZ2Vfd2VpZ2h0IHRvIEFsdGVyZWRfRWRnZV93ZWlnaHRcbkFsdGVyZWRfZGF0YSA8LSBBbHRlcmVkX2RhdGEgJT4lIHJlbmFtZShcIkVkZ2Vfd2VpZ2h0XCI9XCJBbHRlcmVkX0VkZ2Vfd2VpZ2h0XCIpXG5gYGAifQ== -->
+
+```r
+# Create an empty edge list
+##########################################
+Ind_Edge_altered_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2f_Res[[\"Ind_Nets_alt\"]])) {
+    cov_matrix <- Dataset2f_Res[[\"Ind_Nets_alt\"]][[i]]
+    network_name <- names(Dataset2f_Res[[\"Ind_Nets_alt\"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c(\"Source\", \"Sink\", \"Edge_weight\")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_altered_Table[[edge_table_name]] <- adj
+  }
+Dataset2f_Res$Ind_Edge_altered_Table <- Ind_Edge_altered_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_altered_Table)
+
+
+# merge with sample data
+##########################################
+Altered_data <- merge(Merged_Edge_Table, sample_data, by=\"SampleID\")
+# rename Edge_weight to Altered_Edge_weight
+Altered_data <- Altered_data %>% rename(\"Edge_weight\"=\"Altered_Edge_weight\")
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Create an empty edge list
+##########################################
+Ind_Edge_altered_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2f_Res[[\"Ind_Nets_alt\"]])) {
+    cov_matrix <- Dataset2f_Res[[\"Ind_Nets_alt\"]][[i]]
+    network_name <- names(Dataset2f_Res[[\"Ind_Nets_alt\"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c(\"Source\", \"Sink\", \"Edge_weight\")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_altered_Table[[edge_table_name]] <- adj
+  }
+Dataset2f_Res$Ind_Edge_altered_Table <- Ind_Edge_altered_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_altered_Table)
+
+
+# merge with sample data
+##########################################
+Altered_data <- merge(Merged_Edge_Table, sample_data, by=\"SampleID\")
+# rename Edge_weight to Altered_Edge_weight
+Altered_data <- Altered_data %>% rename(\"Edge_weight\"=\"Altered_Edge_weight\")
+```"

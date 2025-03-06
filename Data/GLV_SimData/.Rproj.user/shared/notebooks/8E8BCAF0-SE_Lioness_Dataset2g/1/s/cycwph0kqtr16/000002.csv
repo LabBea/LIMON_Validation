@@ -1,0 +1,70 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBDcmVhdGUgYW4gZW1wdHkgZWRnZSBsaXN0XG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcbkluZF9FZGdlX1VuYWx0X1RhYmxlIDwtIGxpc3QoKVxuXG4jIGxvb3AgdGhyb3VnaCBhbmQgZXh0cmFjdCBlZGdlc1xuIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjXG5mb3IgKGkgaW4gc2VxX2Fsb25nKERhdGFzZXQyZl9SZXNbW1wiSW5kX05ldHNfdW5hbHRlcmVkXCJdXSkpIHtcbiAgICBjb3ZfbWF0cml4IDwtIERhdGFzZXQyZl9SZXNbW1wiSW5kX05ldHNfdW5hbHRlcmVkXCJdXVtbaV1dXG4gICAgbmV0d29ya19uYW1lIDwtIG5hbWVzKERhdGFzZXQyZl9SZXNbW1wiSW5kX05ldHNfdW5hbHRlcmVkXCJdXVtpXSlcbiAgICBlZGdlX3RhYmxlX25hbWUgPC0gcGFzdGUwKG5ldHdvcmtfbmFtZSlcbiAgICBkaWFnb25hbF9pbmRpY2VzIDwtIDE6bnJvdyhjb3ZfbWF0cml4KVxuICAgIGNvdl9tYXRyaXhbY2JpbmQoZGlhZ29uYWxfaW5kaWNlcywgZGlhZ29uYWxfaW5kaWNlcyldIDwtIDBcbiAgICBjb3ZfbWF0cml4W2xvd2VyLnRyaShjb3ZfbWF0cml4KV0gPC0gMFxuICAgIGFkaiA8LSBhcy5kYXRhLmZyYW1lKGFzLnRhYmxlKGNvdl9tYXRyaXgpKVxuICAgIGNvbG5hbWVzKGFkaikgPC0gYyhcIlNvdXJjZVwiLCBcIlNpbmtcIiwgXCJFZGdlX3dlaWdodFwiKVxuICAgIGFkaiA8LSBhZGpbYWRqJEVkZ2Vfd2VpZ2h0ICE9IDAsIF1cbiAgICBhZGokU2FtcGxlSUQgPC0gbmV0d29ya19uYW1lXG4gICAgSW5kX0VkZ2VfVW5hbHRfVGFibGVbW2VkZ2VfdGFibGVfbmFtZV1dIDwtIGFkalxuICB9XG5EYXRhc2V0MmZfUmVzJEluZF9FZGdlX1VuYWx0X1RhYmxlIDwtIEluZF9FZGdlX1VuYWx0X1RhYmxlXG5NZXJnZWRfRWRnZV9UYWJsZSA8LSBkby5jYWxsKHJiaW5kLCBJbmRfRWRnZV9VbmFsdF9UYWJsZSlcblxuIyBsb29wIHRocm91Z2ggYW5kIGV4dHJhY3QgZWRnZXNcbiMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjI1xuc2FtcGxlX2RhdGEgPC0gb3JpZ2luYWxfZGF0YSAlPiUgZHBseXI6OnNlbGVjdChJRClcbnNhbXBsZV9kYXRhIDwtIHNhbXBsZV9kYXRhICU+JSByb3duYW1lc190b19jb2x1bW4oXCJTYW1wbGVJRFwiKVxuIyBtZXJnZSB3aXRoIGVkZ2VzXG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcblVuYWx0ZXJlZF9lZGdlcyA8LSBtZXJnZShNZXJnZWRfRWRnZV9UYWJsZSwgc2FtcGxlX2RhdGEsIGJ5PVwiU2FtcGxlSURcIilcblxuYGBgIn0= -->
+
+```r
+# Create an empty edge list
+##########################################
+Ind_Edge_Unalt_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2f_Res[[\"Ind_Nets_unaltered\"]])) {
+    cov_matrix <- Dataset2f_Res[[\"Ind_Nets_unaltered\"]][[i]]
+    network_name <- names(Dataset2f_Res[[\"Ind_Nets_unaltered\"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c(\"Source\", \"Sink\", \"Edge_weight\")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_Unalt_Table[[edge_table_name]] <- adj
+  }
+Dataset2f_Res$Ind_Edge_Unalt_Table <- Ind_Edge_Unalt_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_Unalt_Table)
+
+# loop through and extract edges
+##########################################
+sample_data <- original_data %>% dplyr::select(ID)
+sample_data <- sample_data %>% rownames_to_column(\"SampleID\")
+# merge with edges
+##########################################
+Unaltered_edges <- merge(Merged_Edge_Table, sample_data, by=\"SampleID\")
+
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Create an empty edge list
+##########################################
+Ind_Edge_Unalt_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2f_Res[[\"Ind_Nets_unaltered\"]])) {
+    cov_matrix <- Dataset2f_Res[[\"Ind_Nets_unaltered\"]][[i]]
+    network_name <- names(Dataset2f_Res[[\"Ind_Nets_unaltered\"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c(\"Source\", \"Sink\", \"Edge_weight\")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_Unalt_Table[[edge_table_name]] <- adj
+  }
+Dataset2f_Res$Ind_Edge_Unalt_Table <- Ind_Edge_Unalt_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_Unalt_Table)
+
+# loop through and extract edges
+##########################################
+sample_data <- original_data %>% dplyr::select(ID)
+sample_data <- sample_data %>% rownames_to_column(\"SampleID\")
+# merge with edges
+##########################################
+Unaltered_edges <- merge(Merged_Edge_Table, sample_data, by=\"SampleID\")
+
+```"

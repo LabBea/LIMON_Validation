@@ -1,0 +1,27 @@
+{
+    "id": "9FFF1A12",
+    "path": "~/Desktop/Long_networks/Scripts/Sensitivity Analysis/Sensitivity_Subj.Rmd",
+    "project_path": "Scripts/Sensitivity Analysis/Sensitivity_Subj.Rmd",
+    "type": "r_markdown",
+    "hash": "342161973",
+    "contents": "",
+    "dirty": false,
+    "created": 1719095751418.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "chunk_output_type": "inline",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "1706,0",
+        "scrollLine": "1701"
+    },
+    "folds": "37|22|332|0|\n333|22|623|0|\n624|22|918|0|\n919|22|1211|0|\n1212|23|1503|0|\n",
+    "lastKnownWriteTime": 1719102581,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1719102581640,
+    "read_only": false,
+    "read_only_alternatives": []
+}

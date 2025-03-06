@@ -1,0 +1,39 @@
+"0","```r
+# Read in the Bracken Files
+bracken_files <- list.files(
+  path = here(\"Data\", \"Microbiome_Data\", \"Bracken\", \"braken_outputs2\"),
+  full.names = TRUE,
+  pattern = \"\\.bracken$\"
+)
+
+# Extract names from file names
+bracken_names <- sapply(basename(bracken_files), function(x) {
+  str_extract(x, \"^[^.]+\")
+})
+
+# Read each file into a list
+Batch2$Bracken <- setNames(
+  lapply(seq_along(bracken_files), function(i) {
+    read_delim(bracken_files[i], delim = \"\t\") %>%
+      mutate(Sample = bracken_names[i])
+  }),
+  bracken_names
+)
+
+# Combine all data frames into one
+Batch2$Raw_Counts <- bind_rows(Batch2$Bracken)
+Batch2$Filt_Counts <- Batch2[[\"Raw_Counts\"]]
+
+
+
+# Reorganize the table with averaging for duplicate sample-taxa pairs
+Batch2$Filt_Counts <- Batch2[[\"Filt_Counts\"]] %>%
+  select(Sample, name, new_est_reads) %>%   # Select only relevant columns
+  pivot_wider(
+    names_from = name,
+    values_from = new_est_reads,
+    values_fill = list(new_est_reads = 0),
+    values_fn = list(new_est_reads = mean)  # Averaging duplicates
+  )
+
+```"

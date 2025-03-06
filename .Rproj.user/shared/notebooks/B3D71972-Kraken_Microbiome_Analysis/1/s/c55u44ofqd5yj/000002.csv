@@ -1,0 +1,13 @@
+"0","```r
+metadata <- read.csv(here(\"Output\", \"Metadata\", \"phyloseq_metadata.csv\"))
+metadata <- metadata %>%
+  mutate(SampleID = paste0(SUBJECT_ID, \"F\")) %>%
+  mutate(SampleID = paste0(SampleID, sep = \".\", visit)) 
+Batch_info <- Batch_info %>% filter(SampleID %in% metadata$SampleID)
+Batch_info <- Batch_info %>% distinct(SampleID, .keep_all = TRUE)
+
+metadata2 <- merge(metadata, Batch_info, by = \"SampleID\", all = FALSE)
+metadata2 <- metadata2 %>% column_to_rownames(\"SampleID\") %>% dplyr::select(-X)
+
+write.csv(metadata2, here(\"Output\", \"Metadata\", \"phyloseq_metadata2.csv\"))
+```"

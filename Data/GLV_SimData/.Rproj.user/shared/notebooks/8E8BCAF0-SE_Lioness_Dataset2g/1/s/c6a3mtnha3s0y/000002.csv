@@ -1,0 +1,54 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuc2V0LnNlZWQoMTIzNDUpXG5cbiMgU2V0IHNlZWRcbnBzZWVkIDwtIGxpc3QocmVwLm51bT01MCwgc2VlZD0xMDAxMClcblxuIyBSdW4gdGhlIFNwaWVjRWFzaSBmdW5jdGlvblxubmV0X2RhdGEgPC0gc3BpZWMuZWFzaShcbiAgICBkYXRhLm1hdHJpeChjb3VudHNfZGF0YSksXG4gICAgbWV0aG9kID0gXCJnbGFzc29cIixcbiAgICBzZWwuY3JpdGVyaW9uID0gXCJic3RhcnNcIiwgXG4gICAgbGFtYmRhLm1pbi5yYXRpbyA9IDAuMDEsXG4gICAgbmxhbWJkYSA9IDIwMCxcbiAgICBwdWxzYXIuc2VsZWN0ID0gVFJVRSxcbiAgICBwdWxzYXIucGFyYW1zID0gcHNlZWQsICBcbiAgICBpY292LnNlbGVjdCA9IFwicHVsc2FyLnNlbGVjdFwiLFxuICAgIGljb3Yuc2VsZWN0LnBhcmFtcyA9IFwicHVsc2FyLnBhcmFtc1wiLCBcbiAgICBsYW1iZGEubG9nID0gVFJVRSAgIFxuICApXG4gIFxuXG4jIFN0b3JlIHRoZSByZXN1bHRzIGluIERhdGFzZXQxX1Jlc1xuRGF0YXNldDJmX1JlcyRTcGVpY0Vhc2lfVGltZSA8LSBuZXRfZGF0YVxuYGBgIn0= -->
+
+```r
+set.seed(12345)
+
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# Run the SpiecEasi function
+net_data <- spiec.easi(
+    data.matrix(counts_data),
+    method = \"glasso\",
+    sel.criterion = \"bstars\", 
+    lambda.min.ratio = 0.01,
+    nlambda = 200,
+    pulsar.select = TRUE,
+    pulsar.params = pseed,  
+    icov.select = \"pulsar.select\",
+    icov.select.params = \"pulsar.params\", 
+    lambda.log = TRUE   
+  )
+  
+
+# Store the results in Dataset1_Res
+Dataset2f_Res$SpeicEasi_Time <- net_data
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+set.seed(12345)
+
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# Run the SpiecEasi function
+net_data <- spiec.easi(
+    data.matrix(counts_data),
+    method = \"glasso\",
+    sel.criterion = \"bstars\", 
+    lambda.min.ratio = 0.01,
+    nlambda = 200,
+    pulsar.select = TRUE,
+    pulsar.params = pseed,  
+    icov.select = \"pulsar.select\",
+    icov.select.params = \"pulsar.params\", 
+    lambda.log = TRUE   
+  )
+  
+
+# Store the results in Dataset1_Res
+Dataset2f_Res$SpeicEasi_Time <- net_data
+```"

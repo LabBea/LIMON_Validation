@@ -1,0 +1,36 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBFeHRyYWN0IHRoZSBDb3ZhcmlhbmNlIE1hdHJpeFxubmV0X3NpbmdsZV9jb3YgPC0gYXMubWF0cml4KGdldE9wdENvdihEYXRhc2V0MmZfUmVzJFNwZWljRWFzaV9UaW1lKSlcblxuIyBTZXQgRGlhZ25vbHMgdG8gMFxuZGlhZ29uYWxfaW5kaWNlcyA8LSAxOm5yb3cobmV0X3NpbmdsZV9jb3YpXG5uZXRfc2luZ2xlX2NvdltjYmluZChkaWFnb25hbF9pbmRpY2VzLCBkaWFnb25hbF9pbmRpY2VzKV0gPC0gMFxuXG4jIEFkZCBzcGVjaWVzIG5hbWVcbmNvbG5hbWVzKG5ldF9zaW5nbGVfY292KSA8LSByb3duYW1lcyhuZXRfc2luZ2xlX2NvdikgPC0gY29sbmFtZXMoY291bnRzX2RhdGEpXG5cbiMgRmluZCB0aGUgbWF4IHZhbHVlXG5tYXgobmV0X3NpbmdsZV9jb3YsIG5hLnJtID0gVFJVRSlcbndoaWNoKG5ldF9zaW5nbGVfY292ID09IG1heChuZXRfc2luZ2xlX2NvdiwgbmEucm0gPSBUUlVFKSwgYXJyLmluZCA9IFRSVUUpXG5gYGAifQ== -->
+
+```r
+# Extract the Covariance Matrix
+net_single_cov <- as.matrix(getOptCov(Dataset2f_Res$SpeicEasi_Time))
+
+# Set Diagnols to 0
+diagonal_indices <- 1:nrow(net_single_cov)
+net_single_cov[cbind(diagonal_indices, diagonal_indices)] <- 0
+
+# Add species name
+colnames(net_single_cov) <- rownames(net_single_cov) <- colnames(counts_data)
+
+# Find the max value
+max(net_single_cov, na.rm = TRUE)
+which(net_single_cov == max(net_single_cov, na.rm = TRUE), arr.ind = TRUE)
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Extract the Covariance Matrix
+net_single_cov <- as.matrix(getOptCov(Dataset2f_Res$SpeicEasi_Time))
+
+# Set Diagnols to 0
+diagonal_indices <- 1:nrow(net_single_cov)
+net_single_cov[cbind(diagonal_indices, diagonal_indices)] <- 0
+
+# Add species name
+colnames(net_single_cov) <- rownames(net_single_cov) <- colnames(counts_data)
+
+# Find the max value
+max(net_single_cov, na.rm = TRUE)
+which(net_single_cov == max(net_single_cov, na.rm = TRUE), arr.ind = TRUE)
+```"

@@ -1,0 +1,294 @@
+---
+title: "Confirm mixed effect models do remove the covariate effects"
+output: html_notebook
+---
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+library(pheatmap)
+library(tibble)
+```
+
+
+
+# 2. Run LIMON on Dataset 1 data
+*** 
+
+
+## 2.1 - Prep the data
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_1","GLV_Cov.csv"))
+
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+
+Check distribution of the raw data
+```{r}
+# Distribution of counts
+########################################################
+hist(as.matrix(limon_counts), breaks = 100, main = "Distribution of GLV Data + Covariates", xlab = "Counts")
+mean(limon_counts)
+sd(limon_counts)
+
+```
+
+No 0 inflation, and the mean is greater than the standard deviation. So no zero-inflated models, and no negative binomial models
+
+
+
+## 2.2 - Remove covariate effects
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+
+
+# save this object to double check spiec easi function
+#saveRDS(L_obj2, here("Data", "LIMON_obj", "L_obj2"))
+```
+
+
+
+## 2.3 - Check the Results
+
+
+__Check the heatmaps of the data__
+```{r}
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:55]), method = "spearman")
+pheatmap(cor_limon, 
+         main = "Correlation after LIMON LMM",
+         color = colorRampPalette(c("purple", "white", "darkgreen"))(50),
+         cluster_rows = FALSE,
+         cluster_cols = FALSE, 
+         fontsize_row = 8,
+         breaks = seq(-1, 1, length.out = 51))
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:55]), method = "spearman")
+pheatmap(cor_raw, 
+         main = "Correlation of GLV data with covariates",
+         color = colorRampPalette(c("purple", "white", "darkgreen"))(50),
+         cluster_rows = FALSE,
+         cluster_cols = FALSE, 
+         fontsize_row = 8,
+         breaks = seq(-1, 1, length.out = 51))
+
+# Correlation matrix of data without covariates from GLV
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_1","GLV.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+cor_og <- cor((original_data[,6:55]), method = "spearman")
+pheatmap(cor_og, 
+         main = "Correlation of GLV data with no covariates",
+         color = colorRampPalette(c("purple", "white", "darkgreen"))(50),
+         cluster_rows = FALSE,
+         cluster_cols = FALSE, 
+         fontsize_row = 8,
+         breaks = seq(-1, 1, length.out = 51))
+```
+
+
+
+
+
+Compare the difference in these correlations using the Frobenius norm
+```{r}
+# Frobenius Norm
+#################################################
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+
+cov_change <- cor_og - cor_limon
+norm(cov_change, type = "F")
+```
+The drastic decrease in the frobenius norm indicates teh correlation matrix of the limon corrected data is more similar to the original data with no covariates added, than the covariate inflated data is.
+
+
+
+
+
+Now look at specific taxa differences. Species 1 had no covariates added, Species 26 had the sex effect added
+```{r}
+
+# Speices with Covariate added
+############################################################################################
+# LIMON fitted vs original data
+ggplot(data = plot_data, aes(x = sp1, y = original_data$sp1, 
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 1 - Limon vs Clean Original",
+       x = "Sp1 Abundance (LIMON)",
+       y = "Sp1 Abundance (GLV, no Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+
+
+
+# LIMON fitted vs covariate data
+ggplot(data = plot_data, aes(x = sp1, y = SimData$sp1, 
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 1 - Limon vs GLV+Cov",
+       x = "Sp1 Abundance (LIMON)",
+       y = "Sp1 Abundance (GLV + Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+
+# Speices with Covariate added
+############################################################################################
+
+# LIMON fitted vs original data
+ggplot(data = plot_data, aes(x = sp26, y = original_data$sp26, 
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 26 - Limon vs Clean Original",
+       x = "Sp26 Abundance (LIMON)",
+       y = "Sp26 Abundance (GLV, no Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+
+# LIMON fitted vs covariate data
+ggplot(data = plot_data, aes(x = sp26, y = SimData$sp26, 
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 26 - Limon vs GLV+Cov",
+       x = "Sp26 Abundance (LIMON)",
+       y = "Sp26 Abundance (GLV + Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+# Speices with Covariate added vs original data
+############################################################################################
+
+# on Covariate Taxa
+ggplot(data = SimData, aes(x = sp26, y = original_data$sp26, 
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 26 - Covariate data vs Clean Original",
+       x = "Sp26 Abundance (GLV + Cov)",
+       y = "Sp26 Abundance (GLV, no Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+
+# on non covariate taxa
+ggplot(data = SimData, aes(x = sp1, y = original_data$sp1,
+                           color = as.factor(ID), 
+                           shape = as.factor(Sex))) +
+  geom_point(size = 3) +
+  labs(title = "Species 1 - Covariate data vs Clean Original",
+       x = "Sp1 Abundance (GLV + Cov)",
+       y = "Sp1 Abundance (GLV, no Cov)") +
+  theme_classic() +   
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14),
+        legend.position = "none")
+
+```
+
+
+Compare Distribution before and after covariate removal
+```{r}
+# Distribution of counts
+########################################################
+hist(as.matrix(limon_counts), breaks = 100, main = "Distribution of GLV Data + Sex Covariate", xlab = "Counts")
+
+# Histogram
+hist(as.matrix(plot_data[,6:55]), breaks = 100, main = "Distribution of GLV Data + Sex Covariate after LIMON", xlab = "Counts")
+```
+
+
+
+
+
+

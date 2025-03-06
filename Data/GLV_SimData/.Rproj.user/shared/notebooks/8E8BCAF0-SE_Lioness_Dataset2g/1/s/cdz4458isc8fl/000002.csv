@@ -1,0 +1,86 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBQcmVwIHRoZSBkYXRhXG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNcbiMgTGlzdCB0byBzdG9yZSBpbmRpdmlkdWFsIG5ldHdvcmtzXG5JbmRfTmV0c191bmFsdGVyZWQgPC0gbGlzdCgpXG5cbiMgT3ZlcmFsbCBuZXR3b3JrXG5uZXRfYWxsIDwtIGFzLm1hdHJpeChTcGllY0Vhc2k6OmdldE9wdENvdihEYXRhc2V0MmZfUmVzW1tcIlNwZWljRWFzaV9UaW1lXCJdXSkpXG5cblxuIyBJbmRpdmlkdWFsaXplZCBOZXR3b3Jrc1xuIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjXG4jIFNldCBzZWVkXG5zZXQuc2VlZCgxMjM0NSlcbnBzZWVkIDwtIGxpc3QocmVwLm51bT01MCwgc2VlZD0xMDAxMClcblxuIyBMb29wXG5mb3IgKGogaW4gMTpucm93KGNvdW50c19kYXRhKSkge1xuICAgICAgc2FtcGxlbmFtZSA8LSByb3duYW1lcyhjb3VudHNfZGF0YVtqLCBdKVxuICAgICAgbnNhbXBsZXMgPC0gbnJvdyhjb3VudHNfZGF0YSlcbiAgICAgIG5ldF9zaW5nbGUgPC0gc3BpZWMuZWFzaShkYXRhLm1hdHJpeChjb3VudHNfZGF0YVstaixdKSxcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbWV0aG9kID0gXCJnbGFzc29cIixcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgc2VsLmNyaXRlcmlvbiA9IFwiYnN0YXJzXCIsIFxuICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBsYW1iZGEubWluLnJhdGlvID0gMC4wMSxcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgbmxhbWJkYSA9IDIwMCxcbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHVsc2FyLnNlbGVjdCA9IFRSVUUsXG4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIHB1bHNhci5wYXJhbXMgPSBwc2VlZCwgIFxuICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpY292LnNlbGVjdCA9IFwicHVsc2FyLnNlbGVjdFwiLFxuICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBpY292LnNlbGVjdC5wYXJhbXMgPSBcInB1bHNhci5wYXJhbXNcIiwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGxhbWJkYS5sb2cgPSBUUlVFKVxuICAgICAgbmV0X3NpbmdsZV9jb3YgPC0gYXMubWF0cml4KGdldE9wdENvdihuZXRfc2luZ2xlKSlcbiAgICAgIG5ldF9uYW1lIDwtIHNhbXBsZW5hbWVcbiAgICAgIEluZF9OZXRzX3VuYWx0ZXJlZFtbbmV0X25hbWVdXSA8LSBuc2FtcGxlcyAqIChuZXRfYWxsIC1cbiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBuZXRfc2luZ2xlX2NvdikgKyBuZXRfc2luZ2xlX2NvdlxuICAgICAgY29sbmFtZXMoSW5kX05ldHNfdW5hbHRlcmVkW1tuZXRfbmFtZV1dKSA8LSByb3duYW1lcyhJbmRfTmV0c191bmFsdGVyZWRbW25ldF9uYW1lXV0pIDwtIGNvbG5hbWVzKGNvdW50c19kYXRhKVxuICAgIH1cblxuIyBTdG9yZSB0aGUgcmVzdWx0cyBcbkRhdGFzZXQyZl9SZXMkSW5kX05ldHNfdW5hbHRlcmVkIDwtIEluZF9OZXRzX3VuYWx0ZXJlZFxuYGBgIn0= -->
+
+```r
+# Prep the data
+################################################
+# List to store individual networks
+Ind_Nets_unaltered <- list()
+
+# Overall network
+net_all <- as.matrix(SpiecEasi::getOptCov(Dataset2f_Res[[\"SpeicEasi_Time\"]]))
+
+
+# Individualized Networks
+################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Loop
+for (j in 1:nrow(counts_data)) {
+      samplename <- rownames(counts_data[j, ])
+      nsamples <- nrow(counts_data)
+      net_single <- spiec.easi(data.matrix(counts_data[-j,]),
+                                method = \"glasso\",
+                                sel.criterion = \"bstars\", 
+                                lambda.min.ratio = 0.01,
+                                nlambda = 200,
+                                pulsar.select = TRUE,
+                                pulsar.params = pseed,  
+                                icov.select = \"pulsar.select\",
+                                icov.select.params = \"pulsar.params\", 
+                                lambda.log = TRUE)
+      net_single_cov <- as.matrix(getOptCov(net_single))
+      net_name <- samplename
+      Ind_Nets_unaltered[[net_name]] <- nsamples * (net_all -
+                                                       net_single_cov) + net_single_cov
+      colnames(Ind_Nets_unaltered[[net_name]]) <- rownames(Ind_Nets_unaltered[[net_name]]) <- colnames(counts_data)
+    }
+
+# Store the results 
+Dataset2f_Res$Ind_Nets_unaltered <- Ind_Nets_unaltered
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Prep the data
+################################################
+# List to store individual networks
+Ind_Nets_unaltered <- list()
+
+# Overall network
+net_all <- as.matrix(SpiecEasi::getOptCov(Dataset2f_Res[[\"SpeicEasi_Time\"]]))
+
+
+# Individualized Networks
+################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Loop
+for (j in 1:nrow(counts_data)) {
+      samplename <- rownames(counts_data[j, ])
+      nsamples <- nrow(counts_data)
+      net_single <- spiec.easi(data.matrix(counts_data[-j,]),
+                                method = \"glasso\",
+                                sel.criterion = \"bstars\", 
+                                lambda.min.ratio = 0.01,
+                                nlambda = 200,
+                                pulsar.select = TRUE,
+                                pulsar.params = pseed,  
+                                icov.select = \"pulsar.select\",
+                                icov.select.params = \"pulsar.params\", 
+                                lambda.log = TRUE)
+      net_single_cov <- as.matrix(getOptCov(net_single))
+      net_name <- samplename
+      Ind_Nets_unaltered[[net_name]] <- nsamples * (net_all -
+                                                       net_single_cov) + net_single_cov
+      colnames(Ind_Nets_unaltered[[net_name]]) <- rownames(Ind_Nets_unaltered[[net_name]]) <- colnames(counts_data)
+    }
+
+# Store the results 
+Dataset2f_Res$Ind_Nets_unaltered <- Ind_Nets_unaltered
+```"

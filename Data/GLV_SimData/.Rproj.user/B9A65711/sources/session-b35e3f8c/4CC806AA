@@ -1,0 +1,27 @@
+{
+    "id": "4CC806AA",
+    "path": "~/Desktop/Long_networks/Scripts/Sensitivity Analysis/SE_Lioness_Dataset2g.Rmd",
+    "project_path": null,
+    "type": "r_markdown",
+    "hash": "1411477721",
+    "contents": "",
+    "dirty": false,
+    "created": 1739290789559.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "chunk_output_type": "inline",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "319,31",
+        "scrollLine": "315"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1739290834,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1739290834492,
+    "read_only": false,
+    "read_only_alternatives": []
+}

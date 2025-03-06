@@ -1,0 +1,22 @@
+"0","```r
+breports_files <- list.files(
+  path = here(\"Data\", \"Microbiome_Data\", \"Bracken\", \"braken_outputs\"),
+  full.names = TRUE,
+  pattern = \"\\.breport$\"
+)
+
+# Extract names from filenames
+bracken_names <- sapply(basename(breports_files), function(x) {
+  str_extract(x, \"(?<=-)[^-]+\")
+})
+
+
+# Read each file into a list
+Batch1$Bracken_reports  <- setNames(
+  lapply(seq_along(breports_files), function(i) {
+    read_delim(breports_files[i], delim = \"\t\") %>%
+      mutate(Sample = bracken_names[i])
+  }),
+  bracken_names
+)
+```"

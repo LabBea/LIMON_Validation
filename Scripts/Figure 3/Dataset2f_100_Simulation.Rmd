@@ -1,0 +1,197 @@
+---
+title: "Dataset 2f 100 Simulation"
+output: html_notebook
+---
+
+Same as Dataset 2f but sample size increased to 100. All different interaction matrices
+
+# 1. Load Library
+***
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(corpcor)
+```
+
+
+
+# 2. Simulate Counts
+
+Simulate a different starting covariance matrix and counts per subject. ie each one has their own seed
+```{r}
+# Initalize an empty list
+####################################################
+count_tables1 <- list()
+
+# The Loop
+####################################################
+
+# Set the indices
+for (i in 1:100) {
+  
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+  
+  # Create Starting covariance matrix
+  n <- 50^2  
+  lower_values <- runif(n / 2, min = -0.8, max = -0.5)  
+  upper_values <- runif(n / 2, min = 0.5, max = 0.8)
+  user_interactions <- c(lower_values, upper_values)
+  user_interactions <- sample(user_interactions)
+  user_A  <- randomA(
+    n_species = 50,
+    interactions = user_interactions,
+    diagonal = -1.0,
+    connectance = 0.5,
+    scale_off_diagonal = 0.2,
+    symmetric = TRUE)
+  
+  # Heatmap of the covariance matrix
+  color_palette <- colorRampPalette(c("red", "white", "blue"))(20)
+  heatmap(
+    user_A,
+    Colv = NA,
+    Rowv = NA,
+    col = color_palette,
+    zlim = c(-1, 1), 
+    main = paste("Subject", i)
+  )
+  
+  # Run the simulation
+  tse_glv <- simulateGLV(n_species = 50,
+                         A = user_A,
+                         t_start = 0, 
+                         t_store = 4,
+                         stochastic = FALSE,
+                         norm = FALSE,
+                         error_variance = 0.1)
+
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables1[[i]] <- t(sim_data)
+}
+
+# Merge together
+####################################################
+
+# Combine the count tables
+combined_count_table <- do.call(rbind, count_tables1)
+
+# Add Rownames
+rownames(combined_count_table) <- paste0("Sbj", rep(1:100, 
+                            each = nrow(count_tables1[[1]])), "_Time", 1:4)
+```
+
+
+
+
+# 3. Create fake metadata  
+
+
+Make Metadata and merge with the count data
+```{r}
+# Set seed
+set.seed(12345)
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:4,ID = 1:100)
+rownames(meta_data) <- rownames(combined_count_table)
+
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+```
+
+
+Plot the data to look at the differences among subjects
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(meta_counts, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series Data")
+
+
+# Plot only two
+########################################################
+# Pivot to long data
+metacounts_filt <- meta_counts[,c(1:6)]
+count_long <- tidyr::pivot_longer(metacounts_filt, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme_linedraw() +
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial",color = "black", size = 14),
+        axis.title.x = element_text(family = "arial",color = "black", size = 14),
+        axis.title.y = element_text(family = "arial",color = "black", size = 14),
+        legend.position = "none",
+        strip.text = element_text(face = "bold", family = "arial", color = "white", size = 15))
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(combined_count_table), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+```
+
+
+# 4. Save the data
+
+Save the Counts
+```{r}
+# Make more like counts
+meta_counts[,3:52] <- round(meta_counts[,3:52])
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2f", "GLV_100.csv"))
+
+# Save just timepoint 2
+meta_counts_filt <- meta_counts %>% filter(Time == 2)
+write.csv(meta_counts_filt, here("Data","GLV_SimData", "Dataset_2f", "GLV_100_T2.csv"))
+```
+
+
+
+

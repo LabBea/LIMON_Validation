@@ -1,0 +1,22 @@
+"0","```r
+alignment_files <- list.files(
+  path = here(\"Data\", \"Microbiome_Data\", \"bowtie2\", \"AlignmentMetrics2\"),
+  full.names = TRUE,
+  pattern = \"\\.txt$\"
+)
+
+# Extract names from filenames
+alignment_names <- sapply(basename(alignment_files), function(x) {
+  str_extract(x, \"^[^_]+\")
+})
+
+# Read each file into a list
+Batch2 <- list()
+Batch2$AlignmentMetrics <- mapply(function(file, name) {
+  read_delim(file, delim = \"\t\") %>%
+    mutate(Sample = name)
+}, file = alignment_files, name = alignment_names, SIMPLIFY = FALSE)
+
+# Combine all data frames into one
+Batch2$BT2_Metrics <- bind_rows(Batch2$AlignmentMetrics)
+```"

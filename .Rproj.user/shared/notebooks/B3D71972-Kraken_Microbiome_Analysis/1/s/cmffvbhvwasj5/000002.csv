@@ -1,0 +1,17 @@
+"0","```r
+# Batch 1
+############################################
+B1 <- as.data.frame(rownames(Batch1_counts))
+B1$Batch <- 1
+colnames(B1) <- c(\"SampleID\", \"Batch\")
+
+# Batch 2
+############################################
+B2 <- as.data.frame(rownames(Batch2_counts))
+B2$Batch <- 2
+colnames(B2) <- c(\"SampleID\", \"Batch\")
+
+# bind the dataframes
+############################################
+Batch_info <- rbind(B1,B2)
+```"

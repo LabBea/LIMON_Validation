@@ -1,0 +1,12 @@
+"0","```r
+# Ensure both data frames have the same columns
+common_columns <- intersect(colnames(Batch1_counts), colnames(Batch2_counts))
+
+# Subset both data frames to have the same columns
+Batch1_counts <- Batch1_counts[, common_columns]
+Batch2_counts <- Batch2_counts[, common_columns]
+
+# Now try rbind again
+Count_data <- rbind(Batch1_counts, Batch2_counts)
+write.csv(Count_data, here(\"Output\", \"Counts\", \"raw_counts.csv\"))
+```"

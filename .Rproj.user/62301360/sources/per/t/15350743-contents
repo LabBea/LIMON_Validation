@@ -1,0 +1,1306 @@
+---
+title: "Network Testing - Sensitivity of Number of Taxa"
+output: html_notebook
+---
+
+
+Here test the strength of recovery of edges of the networks for 0 inflated and non-0 inflated data
+
+
+# 1. Load Library
+*** 
+
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+```
+
+
+
+
+# 2. Non-0 Data (NBLMM LIMON Model)
+***
+
+
+## 2.1 - Taxa N=10
+
+__LIMON Data__  
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N10.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Shorten to 3 timepoints to run faster
+limon_meta <- meta_data %>% filter(Time %in% c(1,2,3))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:15])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           prop.data = FALSE,
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex+BMI+Age",
+                           use_zinb = FALSE)
+
+
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:15]), method = "spearman")
+heatmap(cor_limon, Colv = NA, Rowv = NA, main = "Correlation after NBLMM")
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:15]), method = "spearman")
+heatmap(cor_raw, Colv = NA, Rowv = NA, main = "Correlation of Original Data")
+
+#Frobenius Norm
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+```
+
+
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+
+
+
+__Raw Data__  
+Networks of the Raw Data with no covariates
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_N10.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:15])
+Time2_raw <- round(Time2_raw[,6:15])
+Time3_raw <- round(Time3_raw[,6:15])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+__Raw Data + Covariates__  
+Networks of the Raw Data with covariates (no correction)
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N10.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:15])
+Time2_raw <- round(Time2_raw[,6:15])
+Time3_raw <- round(Time3_raw[,6:15])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+Calculate the similar edges across the three data types (First time point had no edges)
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+L_Edges_T1 <- as.data.frame(L_obj4[["Edge_Table"]][["Edge_Table_1"]])
+L_Edges_T1 <- L_Edges_T1 %>% rename("Edge_weight" = "L_Edge_weight")
+
+# Original Data + Cov - Extract edges
+################################################################################
+Cov_Edges_T1 <- as.data.frame(L_obj_sim5[["Edge_Table"]][["Edge_Table_1"]])
+Cov_Edges_T1 <- Cov_Edges_T1 %>% rename("Edge_weight" = "Cov_Edge_weight")
+
+# Original Data - Extract Edges
+################################################################################
+O_Edges_T1 <- as.data.frame(L_obj_sim4[["Edge_Table"]][["Edge_Table_1"]])
+O_Edges_T1 <- O_Edges_T1 %>% rename("Edge_weight" = "O_Edge_weight")
+
+# Comparison Graph
+################################################################################
+
+#Summary Data
+Merged_T1 <- merge(L_Edges_T1, O_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+
+#Merged_T1$Recovery <- ifelse(
+#  !is.na(Merged_T1$L_Edge_weight) & !is.na(Merged_T1$O_Edge_weight) & !is.na(Merged_T1$Cov_Edge_weight) &
+#  (Merged_T1$L_Edge_weight != 0 & Merged_T1$O_Edge_weight != 0 & Merged_T1$Cov_Edge_weight != 0), 3,
+#  ifelse(
+#    !is.na(Merged_T1$O_Edge_weight) & !is.na(Merged_T1$Cov_Edge_weight) &
+#    (Merged_T1$O_Edge_weight != 0 & Merged_T1$Cov_Edge_weight != 0), 2,
+#    ifelse(
+#      !is.na(Merged_T1$L_Edge_weight) & !is.na(Merged_T1$O_Edge_weight) &
+#      ((Merged_T1$L_Edge_weight > 0 & Merged_T1$O_Edge_weight > 0) | 
+#       (Merged_T1$L_Edge_weight < 0 & Merged_T1$O_Edge_weight < 0)), 1, 0
+#    )
+#  )
+#)
+
+Merged_T1[1,] <- NA
+Merged_T1$SampleSize <- 10
+```
+
+
+
+
+
+## 2.2 - Taxa N=20
+
+__LIMON Data__  
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N20.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Shorten to 3 timepoints to run faster
+limon_meta <- meta_data %>% filter(Time %in% c(1,2,3))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:25])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           prop.data = FALSE,
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex+BMI+Age",
+                           use_zinb = FALSE)
+
+
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:25]), method = "spearman")
+heatmap(cor_limon, Colv = NA, Rowv = NA, main = "Correlation after NBLMM")
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:25]), method = "spearman")
+heatmap(cor_raw, Colv = NA, Rowv = NA, main = "Correlation of Original Data")
+
+#Frobenius Norm
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+```
+
+
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+
+__Raw Data no Covariates__  
+Networks of the Raw Data 
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_N20.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:25])
+Time2_raw <- round(Time2_raw[,6:25])
+Time3_raw <- round(Time3_raw[,6:25])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+
+__Raw Data + Covariates__  
+Networks of the Raw Data with covariates (no correction)
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N20.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:25])
+Time2_raw <- round(Time2_raw[,6:25])
+Time3_raw <- round(Time3_raw[,6:25])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+```
+
+
+
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+L_Edges_T1 <- as.data.frame(L_obj4[["Edge_Table"]][["Edge_Table_1"]])
+L_Edges_T1 <- L_Edges_T1 %>% rename("Edge_weight" = "L_Edge_weight")
+
+# Original Data + Cov - Extract edges
+################################################################################
+Cov_Edges_T1 <- as.data.frame(L_obj_sim5[["Edge_Table"]][["Edge_Table_1"]])
+Cov_Edges_T1 <- Cov_Edges_T1 %>% rename("Edge_weight" = "Cov_Edge_weight")
+
+# Original Data - Extract Edges
+################################################################################
+O_Edges_T1 <- as.data.frame(L_obj_sim4[["Edge_Table"]][["Edge_Table_1"]])
+O_Edges_T1 <- O_Edges_T1 %>% rename("Edge_weight" = "O_Edge_weight")
+
+# Comparison Graph
+################################################################################
+
+#Summary Data
+Merged_T20 <- merge(L_Edges_T1, O_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+Merged_T20 <- merge(Merged_T20, Cov_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+
+Merged_T20$Recovery <- ifelse(
+  !is.na(Merged_T20$L_Edge_weight) & !is.na(Merged_T20$O_Edge_weight) & !is.na(Merged_T20$Cov_Edge_weight) &
+  (Merged_T20$L_Edge_weight != 0 & Merged_T20$O_Edge_weight != 0 & Merged_T20$Cov_Edge_weight != 0), 3,
+  ifelse(
+    !is.na(Merged_T20$O_Edge_weight) & !is.na(Merged_T20$Cov_Edge_weight) &
+    (Merged_T20$O_Edge_weight != 0 & Merged_T20$Cov_Edge_weight != 0), 2,
+    ifelse(
+      !is.na(Merged_T20$L_Edge_weight) & !is.na(Merged_T20$O_Edge_weight) &
+      ((Merged_T20$L_Edge_weight > 0 & Merged_T20$O_Edge_weight > 0) | 
+       (Merged_T20$L_Edge_weight < 0 & Merged_T20$O_Edge_weight < 0)), 1, 0
+    )
+  )
+)
+
+
+#Merged_T20[1,] <- NA
+Merged_T20$SampleSize <- 20
+```
+
+
+
+
+## 2.3 - Taxa N=50
+
+__LIMON Data__  
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N50.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Shorten to 3 timepoints to run faster
+limon_meta <- meta_data %>% filter(Time %in% c(1,2,3))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           prop.data = FALSE,
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex+BMI+Age",
+                           use_zinb = FALSE)
+
+
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:55]), method = "spearman")
+heatmap(cor_limon, Colv = NA, Rowv = NA, main = "Correlation after NBLMM")
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:55]), method = "spearman")
+heatmap(cor_raw, Colv = NA, Rowv = NA, main = "Correlation of Original Data")
+
+#Frobenius Norm
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+```
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+__Raw Data no Covariates__  
+Networks of the Raw Data with no covariates
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_N50.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:55])
+Time2_raw <- round(Time2_raw[,6:55])
+Time3_raw <- round(Time3_raw[,6:55])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+__Raw Data + Covariates__  
+Networks of the Raw Data with covariates (no correction)
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N50.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:55])
+Time2_raw <- round(Time2_raw[,6:55])
+Time3_raw <- round(Time3_raw[,6:55])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+L_Edges_T1 <- as.data.frame(L_obj4[["Edge_Table"]][["Edge_Table_1"]])
+L_Edges_T1 <- L_Edges_T1 %>% rename("Edge_weight" = "L_Edge_weight")
+
+# Original Data + Cov - Extract edges
+################################################################################
+Cov_Edges_T1 <- as.data.frame(L_obj_sim5[["Edge_Table"]][["Edge_Table_1"]])
+Cov_Edges_T1 <- Cov_Edges_T1 %>% rename("Edge_weight" = "Cov_Edge_weight")
+
+# Original Data - Extract Edges
+################################################################################
+O_Edges_T1 <- as.data.frame(L_obj_sim4[["Edge_Table"]][["Edge_Table_1"]])
+O_Edges_T1 <- O_Edges_T1 %>% rename("Edge_weight" = "O_Edge_weight")
+
+# Comparison Graph
+################################################################################
+
+#Summary Data
+Merged_T50 <- merge(L_Edges_T1, O_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+Merged_T50 <- merge(Merged_T50, Cov_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+
+Merged_T50$Recovery <- ifelse(
+  !is.na(Merged_T50$L_Edge_weight) & !is.na(Merged_T50$O_Edge_weight) & !is.na(Merged_T50$Cov_Edge_weight) &
+  (Merged_T50$L_Edge_weight != 0 & Merged_T50$O_Edge_weight != 0 & Merged_T50$Cov_Edge_weight != 0), 3,
+  ifelse(
+    !is.na(Merged_T50$O_Edge_weight) & !is.na(Merged_T50$Cov_Edge_weight) &
+    (Merged_T50$O_Edge_weight != 0 & Merged_T50$Cov_Edge_weight != 0), 2,
+    ifelse(
+      !is.na(Merged_T50$L_Edge_weight) & !is.na(Merged_T50$O_Edge_weight) &
+      ((Merged_T50$L_Edge_weight > 0 & Merged_T50$O_Edge_weight > 0) | 
+       (Merged_T50$L_Edge_weight < 0 & Merged_T50$O_Edge_weight < 0)), 1, 0
+    )
+  )
+)
+
+
+Merged_T50$SampleSize <- 50
+
+```
+
+
+#####################################################################
+## 2.4 - Taxa N=75
+
+__LIMON Data__  
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N75.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Shorten to 3 timepoints to run faster
+limon_meta <- meta_data %>% filter(Time %in% c(1,2,3))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:80])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           prop.data = FALSE,
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex+BMI+Age",
+                           use_zinb = FALSE)
+
+
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:80]), method = "spearman")
+heatmap(cor_limon, Colv = NA, Rowv = NA, main = "Correlation after NBLMM")
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:80]), method = "spearman")
+heatmap(cor_raw, Colv = NA, Rowv = NA, main = "Correlation of Original Data")
+
+#Frobenius Norm
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+```
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+
+__Raw Data no Covariates__  
+Networks of the Raw Data with no covariates
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_N75.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:80])
+Time2_raw <- round(Time2_raw[,6:80])
+Time3_raw <- round(Time3_raw[,6:80])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+__Raw Data + Covariates__  
+Networks of the Raw Data with covariates (no correction)
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N75.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:80])
+Time2_raw <- round(Time2_raw[,6:80])
+Time3_raw <- round(Time3_raw[,6:80])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+L_Edges_T1 <- as.data.frame(L_obj4[["Edge_Table"]][["Edge_Table_1"]])
+L_Edges_T1 <- L_Edges_T1 %>% rename("Edge_weight" = "L_Edge_weight")
+
+# Original Data + Cov - Extract edges
+################################################################################
+Cov_Edges_T1 <- as.data.frame(L_obj_sim5[["Edge_Table"]][["Edge_Table_1"]])
+Cov_Edges_T1 <- Cov_Edges_T1 %>% rename("Edge_weight" = "Cov_Edge_weight")
+
+# Original Data - Extract Edges
+################################################################################
+O_Edges_T1 <- as.data.frame(L_obj_sim4[["Edge_Table"]][["Edge_Table_1"]])
+O_Edges_T1 <- O_Edges_T1 %>% rename("Edge_weight" = "O_Edge_weight")
+
+# Comparison Graph
+################################################################################
+
+#Summary Data
+Merged_T75 <- merge(L_Edges_T1, O_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+Merged_T75 <- merge(Merged_T75, Cov_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+
+Merged_T75$Recovery <- ifelse(
+  !is.na(Merged_T75$L_Edge_weight) & !is.na(Merged_T75$O_Edge_weight) & !is.na(Merged_T75$Cov_Edge_weight) &
+  (Merged_T75$L_Edge_weight != 0 & Merged_T75$O_Edge_weight != 0 & Merged_T75$Cov_Edge_weight != 0), 3,
+  ifelse(
+    !is.na(Merged_T75$O_Edge_weight) & !is.na(Merged_T75$Cov_Edge_weight) &
+    (Merged_T75$O_Edge_weight != 0 & Merged_T75$Cov_Edge_weight != 0), 2,
+    ifelse(
+      !is.na(Merged_T75$L_Edge_weight) & !is.na(Merged_T75$O_Edge_weight) &
+      ((Merged_T75$L_Edge_weight > 0 & Merged_T75$O_Edge_weight > 0) | 
+       (Merged_T75$L_Edge_weight < 0 & Merged_T75$O_Edge_weight < 0)), 1, 0
+    )
+  )
+)
+
+
+Merged_T75$SampleSize <- 75
+
+```
+
+
+## 2.5 - Subjects N=100
+
+__LIMON Data__  
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N100.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Shorten to 3 timepoints to run faster
+limon_meta <- meta_data %>% filter(Time %in% c(1,2,3))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:105])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           prop.data = FALSE,
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex+BMI+Age",
+                           use_zinb = FALSE)
+
+
+# Check the taxa now
+#################################################################################
+plot_data <- merge(limon_meta, L_obj2[["Corrected_Counts"]], by = 0, all=TRUE)
+plot_data <- column_to_rownames(plot_data, "Row.names")
+
+# Correlation matrix
+cor_limon <- cor((plot_data[,6:105]), method = "spearman")
+heatmap(cor_limon, Colv = NA, Rowv = NA, main = "Correlation after NBLMM")
+
+# Correlation matrix
+cor_raw <- cor((SimData[,6:105]), method = "spearman")
+heatmap(cor_raw, Colv = NA, Rowv = NA, main = "Correlation of Original Data")
+
+#Frobenius Norm
+cov_change <- cor_raw - cor_limon
+norm(cov_change, type = "F")
+```
+
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+
+__Raw Data no Covariates__  
+Networks of the Raw Data 
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_N100.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:105])
+Time2_raw <- round(Time2_raw[,6:105])
+Time3_raw <- round(Time3_raw[,6:105])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+__Raw Data + Covariates__  
+Networks of the Raw Data with covariates (no correction)
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Taxa_Data","GLV_Cov_N100.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Filter to Time 1
+Time1_raw <- original_data %>% filter(Time==1)
+Time2_raw <- original_data %>% filter(Time==2)
+Time3_raw <- original_data %>% filter(Time==3)
+
+# Remove metadata
+Time1_raw <- round(Time1_raw[,6:105])
+Time2_raw <- round(Time2_raw[,6:105])
+Time3_raw <- round(Time3_raw[,6:105])
+
+# Run SPIEC-EASI
+L_obj_sim2 <- L_obj2
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_1"]] <- Time1_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_2"]] <- Time2_raw
+L_obj_sim2[["Corrected_Counts_Time"]][["Corrected_Counts_3"]] <- Time3_raw
+
+
+# Network Inference
+##################################################################################
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 50)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+L_Edges_T1 <- as.data.frame(L_obj4[["Edge_Table"]][["Edge_Table_1"]])
+L_Edges_T1 <- L_Edges_T1 %>% rename("Edge_weight" = "L_Edge_weight")
+
+# Original Data + Cov - Extract edges
+################################################################################
+Cov_Edges_T1 <- as.data.frame(L_obj_sim5[["Edge_Table"]][["Edge_Table_1"]])
+Cov_Edges_T1 <- Cov_Edges_T1 %>% rename("Edge_weight" = "Cov_Edge_weight")
+
+# Original Data - Extract Edges
+################################################################################
+O_Edges_T1 <- as.data.frame(L_obj_sim4[["Edge_Table"]][["Edge_Table_1"]])
+O_Edges_T1 <- O_Edges_T1 %>% rename("Edge_weight" = "O_Edge_weight")
+
+# Comparison Graph
+################################################################################
+
+#Summary Data
+Merged_T100 <- merge(L_Edges_T1, O_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+Merged_T100 <- merge(Merged_T100, Cov_Edges_T1, by.y = c("Source", "Sink"), all=TRUE)
+
+Merged_T100$Recovery <- ifelse(
+  !is.na(Merged_T100$L_Edge_weight) & !is.na(Merged_T100$O_Edge_weight) & !is.na(Merged_T100$Cov_Edge_weight) &
+  (Merged_T100$L_Edge_weight != 0 & Merged_T100$O_Edge_weight != 0 & Merged_T100$Cov_Edge_weight != 0), 3,
+  ifelse(
+    !is.na(Merged_T100$O_Edge_weight) & !is.na(Merged_T100$Cov_Edge_weight) &
+    (Merged_T100$O_Edge_weight != 0 & Merged_T100$Cov_Edge_weight != 0), 2,
+    ifelse(
+      !is.na(Merged_T100$L_Edge_weight) & !is.na(Merged_T100$O_Edge_weight) &
+      ((Merged_T100$L_Edge_weight > 0 & Merged_T100$O_Edge_weight > 0) | 
+       (Merged_T100$L_Edge_weight < 0 & Merged_T100$O_Edge_weight < 0)), 1, 0
+    )
+  )
+)
+
+
+Merged_T100$SampleSize <- 100
+
+```
+
+
+
+
+
+## 2.5 Print the Graphs
+
+Percent True Edges Recovered
+```{r}
+# Drop Source and Sink column and combine together
+#################################################################
+Merged_T1$Recovery <- NA
+Merged_T1b <- Merged_T1 %>% dplyr::select(-Source, -Sink)
+Merged_T20b <- Merged_T20 %>% dplyr::select(-Source, -Sink)
+Merged_T50b <- Merged_T50 %>% dplyr::select(-Source, -Sink)
+Merged_T75b <- Merged_T75 %>% dplyr::select(-Source, -Sink)
+Merged_T100b <- Merged_T100 %>% dplyr::select(-Source, -Sink)
+
+# Merge together
+#################################################################
+Subject_sens_data <- rbind(Merged_T1b, Merged_T20b, Merged_T50b, Merged_T75b, Merged_T100b)
+Subject_sens_data2 <- Subject_sens_data %>%
+  group_by(SampleSize) %>%
+  summarise(True_Edges = sum(O_Edge_weight != 0)) %>%
+  ungroup()
+
+Subject_sens_data2 <- Subject_sens_data %>%
+  group_by(SampleSize) %>%
+  summarise(True_Edges = sum(O_Edge_weight != 0, na.rm = TRUE)) %>%
+  ungroup()
+
+Subject_sens_data <- merge(Subject_sens_data, Subject_sens_data2, by=("SampleSize"), all=TRUE)
+
+# Percent True Edges Data
+#################################################################
+Percent_true <- Subject_sens_data  %>%
+  group_by(SampleSize, Recovery, True_Edges) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  filter(Recovery != 0)
+
+# Add the number of edges in all three data types to the LIMON vs Raw Speic-Easi counts
+Percent_true <- Percent_true %>%
+   group_by(SampleSize, True_Edges) %>%
+   mutate(
+     Count_3 = ifelse(Recovery == 3, Count, 0),
+     Count = ifelse(Recovery == 1 | Recovery == 2, Count + sum(Count_3), Count)
+   ) %>%
+   dplyr::select(-Count_3)
+
+# Create a dataframe with all combinations of SampleSize and Recovery
+combinations <- expand.grid(SampleSize = unique(Percent_true$SampleSize), Recovery = c(1, 2, 3))
+Percent_true <- merge(Percent_true, combinations, by.y=c("SampleSize", "Recovery"), all=TRUE)
+Percent_true <- Percent_true %>%
+  group_by(SampleSize) %>%
+  fill(True_Edges, .direction = "downup") %>%
+  mutate(
+    Count = ifelse(is.na(Count), Count[Recovery == 3][1], ifelse(is.na(Count), 0, Count))) %>%
+  ungroup() %>%
+  replace_na(list(Count = 0)) %>% 
+  mutate(DataType = case_when(Recovery == 1 ~ "LIMON",
+                          Recovery == 2 ~ "SPIEC-EASI",
+                          Recovery == 3 ~ "Both"))
+
+
+# Calculate the Percentage
+Percent_true$Percent_true <- Percent_true$Count/Percent_true$True_Edges
+
+
+# Graph
+#################################################################
+ggplot(Percent_true, aes(x = SampleSize, y = Percent_true, color = DataType)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "SampleSize", y = "Percent_true", color = "DataType") +
+  xlim(10, 100) +
+  ylim(0,1) +
+  xlab("Taxa Sample Size") +
+  ylab("Percent True Edges") +
+  ggtitle("Taxa Size") +
+  scale_color_manual(values = c("LIMON" = "orange", "SPIEC-EASI" = "blue", "Both" = "green")) +
+  theme_minimal()
+```
+
+
+
+```{r}
+# Make Dataframe for Total Edges per data Type
+#################################################################
+Subject_sens_data3 <- rbind(Merged_T1, Merged_T20, Merged_T50, Merged_T75, Merged_T100)
+
+Total_Edges <- Subject_sens_data3 %>%
+  group_by(SampleSize) %>%
+  summarize(
+    Count_L_Edge_weight = sum(!is.na(L_Edge_weight)),
+    Count_O_Edge_weight = sum(!is.na(O_Edge_weight)),
+    Count_Cov_Edge_weight = sum(!is.na(Cov_Edge_weight))
+  )  %>%
+  pivot_longer(cols = starts_with("Count"), names_to = "Counts_Column_Name", values_to = "Count")  %>%
+  mutate(DataType = case_when(Counts_Column_Name == "Count_L_Edge_weight" ~ "LIMON",
+                              Counts_Column_Name == "Count_O_Edge_weight" ~ "True",
+                              Counts_Column_Name == "Count_Cov_Edge_weight" ~ "SPIEC-EASI"))
+
+
+# Graph
+#################################################################
+ggplot(Total_Edges, aes(x = SampleSize, y = Count, color = DataType)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "SampleSize", y = "Count", color = "DataType") +
+  xlim(10, 100) +
+  #ylim(0,1) +
+  xlab("Taxa Sample Size") +
+  ylab("Total Network Edges") +
+  scale_color_manual(values = c("LIMON" = "orange", "SPIEC-EASI" = "blue", "True" = "darkgrey")) +
+  theme_minimal()
+
+```

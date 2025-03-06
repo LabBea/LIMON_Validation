@@ -1,0 +1,784 @@
+---
+title: "Dataset 2g Simulation"
+output: html_notebook
+---
+
+
+For Dataset 2g -> simulate 50 subjects at one timepoint using the SPIEC EASI data simulation functions. I will use the same data from the Dataset 2f; (1) 50 subjects, 50 taxa (2) 100 subjects, 50 taxa (3) 50 subjects, 100 taxa
+
+# 1. Load Library
+***
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(corpcor)
+library(Matrix)
+```
+
+
+# 2. 50 subjects 50 taxa Data
+
+```{r}
+# Pull Data
+Subj50_Taxa50 <- read.csv(here("Data","GLV_SimData", 
+                               "Dataset_2f", "GLV_T2.csv"))
+Subj50_Taxa50 <- Subj50_Taxa50 %>% column_to_rownames("X")
+Subj50_Taxa50 <- Subj50_Taxa50[,3:52]
+
+d <- ncol(Subj50_Taxa50)
+n <- nrow(Subj50_Taxa50)
+e <- d
+```
+
+
+```{r}
+# Synthesize
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010)
+Prec  <- graph2prec(graph)
+set.seed(10010)
+Cor1  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj50_Taxa50, mar=2, distr='zinegbin', Sigma=Cor1, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj50_Taxa50)
+colnames(X) <- colnames(Subj50_Taxa50)
+
+# Heatmap
+heatmap(Cor1, Colv = NA, Rowv = NA, main = "50 subj 50 taxa")
+
+# Save the File
+write.csv(X,here("Data","GLV_SimData","Dataset_2g", "SE_50sbj50taxa.csv"))
+write.csv(Cor1,here("Data","GLV_SimData","Dataset_2g", "Cor_50sbj50taxa.csv"))
+```
+
+
+
+
+# 3. 100 subjects 50 taxa Data
+
+```{r}
+# Pull Data
+Subj100_Taxa50 <- read.csv(here("Data","GLV_SimData", 
+                               "Dataset_2f", "GLV_100_T2.csv"))
+Subj100_Taxa50 <- Subj100_Taxa50 %>% column_to_rownames("X")
+Subj100_Taxa50 <- Subj100_Taxa50[,3:52]
+
+d <- ncol(Subj100_Taxa50)
+n <- nrow(Subj100_Taxa50)
+e <- d
+```
+
+
+```{r}
+# Synthesize
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010)
+Prec  <- graph2prec(graph)
+set.seed(10010)
+Cor1  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj100_Taxa50, 
+                            mar=2, distr='zinegbin', Sigma=Cor1, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj100_Taxa50)
+colnames(X) <- colnames(Subj100_Taxa50)
+
+# Heatmap
+heatmap(Cor1, Colv = NA, Rowv = NA, main = "100 subj 50 taxa")
+
+# Save the File
+write.csv(X,here("Data","GLV_SimData","Dataset_2g", "SE_100sbj50taxa.csv"))
+write.csv(Cor1,here("Data","GLV_SimData","Dataset_2g", "Cor_100sbj50taxa.csv"))
+```
+
+
+
+# 4. 50 subjects 100 taxa Data
+
+```{r}
+# Pull Data
+Subj50_Taxa100 <- read.csv(here("Data","GLV_SimData", 
+                               "Dataset_2f", "GLV_100sp_T2.csv"))
+Subj50_Taxa100 <- Subj50_Taxa100 %>% column_to_rownames("X")
+Subj50_Taxa100 <- Subj50_Taxa100[,3:102]
+
+d <- ncol(Subj50_Taxa100)
+n <- nrow(Subj50_Taxa100)
+e <- d
+```
+
+
+```{r}
+# Synthesize
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010)
+Prec  <- graph2prec(graph)
+set.seed(10010)
+Cor1  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj50_Taxa100, 
+                            mar=2, distr='zinegbin', Sigma=Cor1, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj50_Taxa100)
+colnames(X) <- colnames(Subj50_Taxa100)
+
+# Heatmap
+heatmap(Cor1, Colv = NA, Rowv = NA, main = "50 subj 100 taxa")
+
+# Save the File
+write.csv(X,here("Data","GLV_SimData","Dataset_2g", "SE_50sbj100taxa.csv"))
+write.csv(Cor1,here("Data","GLV_SimData","Dataset_2g", "Cor_50sbj100taxa.csv"))
+```
+
+
+
+
+# 5. 100 subjects 100 taxa Data
+
+```{r}
+# Pull Data
+Subj100_Taxa100 <- read.csv(here("Data","GLV_SimData", 
+                               "Dataset_2f", "GLV_100_100sp_T2.csv"))
+Subj100_Taxa100 <- Subj100_Taxa100 %>% column_to_rownames("X")
+Subj100_Taxa100 <- Subj100_Taxa100[,3:102]
+
+d <- ncol(Subj100_Taxa100)
+n <- nrow(Subj100_Taxa100)
+e <- d
+```
+
+
+```{r}
+# Synthesize
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010)
+Prec  <- graph2prec(graph)
+set.seed(10010)
+Cor1  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj100_Taxa100, 
+                            mar=2, distr='zinegbin', Sigma=Cor1, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj100_Taxa100)
+colnames(X) <- colnames(Subj100_Taxa100)
+
+# Heatmap
+heatmap(Cor1, Colv = NA, Rowv = NA, main = "100 subj 100 taxa")
+
+# Save the File
+write.csv(X,here("Data","GLV_SimData","Dataset_2g", "SE_100sbj100taxa.csv"))
+write.csv(Cor1,here("Data","GLV_SimData","Dataset_2g",
+                    "Cor_100sbj100taxa.csv"))
+```
+
+
+
+# 6. 10% Changes
+
+50 subjects, 100 species. Have the core true graph, then change 10% of the edges
+Loop -> Take the graph above, randomly change 10% (10 edges), simulate for that person
+
+
+Check which edges in graph arent 0, change one of those taxa to zero in different subjects
+```{r}
+# Starting Graph Structure
+########################################
+d <- ncol(Subj50_Taxa100)
+n <- nrow(Subj50_Taxa100)
+e <- d
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010) 
+Prec  <- graph2prec(graph)
+set.seed(10010) 
+Cor1_alt  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj50_Taxa100, 
+                            mar=2, distr='zinegbin', Sigma=Cor1, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj50_Taxa100)
+colnames(X) <- colnames(Subj50_Taxa100)
+
+
+# Create a list to store the new covariance matrices
+########################################
+Adj_list <- list()
+Counts_list <- list()
+Changed_Indices <- list()
+
+
+# Chose 20 indices to choose from, then sample 10 from there to randomly 
+############################################################
+
+# Get list of non zero edges
+upper_tri_indices <- which(upper.tri(Cor1_alt), arr.ind = TRUE)
+
+nonzero_indices <- upper_tri_indices[which(Cor1_alt[upper_tri_indices] != 0), 
+                                       , drop = FALSE]
+
+
+# Loop to create 50 graphs that are mostly the same
+############################################################
+for(i in 1:50){
+  
+  # Select a non-zero edge
+  set.seed(12345 + i)  
+  selected_nonzeros <- nonzero_indices[sample(nrow(nonzero_indices), 1),, drop = FALSE]
+  
+  # Store the changed indices for this iteration
+  Changed_Indices[[i]] <- list(nonzero_to_zero = selected_nonzeros)
+  
+  
+  # change one of the values to 0
+  X_i <- Subj50_Taxa100[i,]
+  X_i[,selected_nonzeros] <- 0
+  
+  # Save Both to Lists
+  Counts_list[[i]] <- X_i
+}
+
+```
+
+
+```{r}
+# Starting Graph Structure
+########################################
+d <- ncol(Subj50_Taxa100)
+n <- nrow(Subj50_Taxa100)
+e <- d
+set.seed(10010)
+graph <- SpiecEasi::make_graph('cluster', d, e)
+set.seed(10010) 
+Prec  <- graph2prec(graph)
+set.seed(10010) 
+Cor1_alt  <- round(cov2cor(prec2cov(Prec)), 6)
+set.seed(10010)
+X <- synth_comm_from_counts(Subj50_Taxa100, 
+                            mar=2, distr='zinegbin', Sigma=Cor1_alt, n=n)
+
+# Add Row and column names
+rownames(X) <- rownames(Subj50_Taxa100)
+colnames(X) <- colnames(Subj50_Taxa100)
+
+# Create lists to store modified matrices
+########################################
+Adj_list <- list()
+Counts_list <- list()
+Changed_Indices <- list()
+
+# Get list of nonzero edges
+upper_tri_indices <- which(upper.tri(Cor1_alt), arr.ind = TRUE)
+
+nonzero_indices <- upper_tri_indices[which(Cor1_alt[upper_tri_indices] != 0), , drop = FALSE]
+
+
+# Loop to create 50 modified count matrices
+############################################################
+for(i in 1:50){
+  
+  # Select a nonzero edge
+  set.seed(12345 + i)  
+  selected_edge <- nonzero_indices[sample(nrow(nonzero_indices), 1), , drop = FALSE]
+  
+  # Extract one taxa index
+  taxa_to_zero <- as.numeric(selected_edge[1,1])
+  taxa_to_zero <- paste("sp",taxa_to_zero, sep="")
+
+  # Store changed indices
+  Changed_Indices[[i]] <- taxa_to_zero
+  
+  # Modify the count
+  X_i <- as.data.frame(t(X[i,]))
+  X_i[1,taxa_to_zero] <- 0 
+  
+  # Save new count matrix
+  Counts_list[[i]] <- X_i
+}
+
+```
+
+
+```{r}
+# Combine the count tables
+Subj50_Taxa100_90 <- do.call(rbind, Counts_list)
+```
+
+
+Get the indices of the altered edges
+```{r}
+# Start list
+all_changes <- list()
+
+# Loop over the iterations
+for (i in seq_along(Changed_Indices)) {
+  
+  nonzero_to_zero_df <- data.frame(Source = Changed_Indices[[i]],
+                                   Change_Type = "nonzero_to_zero",
+                                   SubjectID = i)  
+  
+  # Combine 
+  all_changes[[i]] <- bind_rows(nonzero_to_zero_df)
+}
+
+# Bind together and fix sample names
+Subj50_Taxa100_90_indices <- bind_rows(all_changes)
+Subj50_Taxa100_90_indices$SubjectID <- paste0("Sbj", Subj50_Taxa100_90_indices$SubjectID)
+Subj50_Taxa100_90_indices$SubjectID <- paste0(Subj50_Taxa100_90_indices$SubjectID, "_Time2")
+
+# check how many unique changed
+length(unique(Subj50_Taxa100_90_indices$Source))
+
+```
+
+
+
+```{r}
+# Save the File
+write.csv(Subj50_Taxa100_90,
+          here("Data","GLV_SimData","Dataset_2g", "SE_50sbj100taxa_90.csv"))
+
+write.csv(Subj50_Taxa100_90_indices,
+          here("Data","GLV_SimData","Dataset_2g", "50sbj100taxa_90indices.csv"))
+
+```
+
+
+
+# 7. Strong edge shuffle
+
+Generate a total of 8 datasets
+
+In the first iteration we will generate 4 datasets. Pick the top 3 or 5 non overlapping edges (~5%, 10%) and set one of those taxa to 0 in 1 or 5 subjects
+
+In the second iteration, we will generate 4 datasets again. But now pick the weakest 3-5 non overlapping edges and make the counts of both of those taxa higher than the mean or doubled. In 1 or 5 subjects again
+
+
+## 7.1 - Strong to Weak
+
+Iteration 1
+```{r}
+# Get Indices Without Overlapping Taxa
+#######################################################
+
+unique_edges <- function(cor_matrix, upper_tri_indices, n) {
+  selected_edges <- matrix(nrow = 0, ncol = 2) 
+  used_taxa <- c()
+  
+  # Order by abs cor value
+  ordered_edges <- order(abs(cor_matrix[upper_tri_indices]), decreasing = TRUE)
+  
+  for (idx in ordered_edges) {
+    edge <- upper_tri_indices[idx, , drop = FALSE] 
+    
+    # Extract taxa from edge
+    taxa_1 <- edge[1, 1]
+    taxa_2 <- edge[1, 2]
+    
+    # Check if already used
+    if (!(taxa_1 %in% used_taxa || taxa_2 %in% used_taxa)) {
+      selected_edges <- rbind(selected_edges, edge)
+      used_taxa <- c(used_taxa, taxa_1, taxa_2)
+    }
+    
+    if (nrow(selected_edges) == n) break
+  }
+  
+  return(selected_edges)
+}
+
+
+# Top 3 Edges Without Overlap
+Edge_3 <- unique_edges(Cor1_alt, upper_tri_indices, 3)
+
+# Top 5 Edges Without Overlap
+Edge_5 <- unique_edges(Cor1_alt, upper_tri_indices, 5)
+
+# Get N Value (Random Subjects)
+#######################################################
+set.seed(12345)
+N1 <- sample(rownames(X), 1)
+
+set.seed(12345)
+N5 <- sample(rownames(X), 5)
+
+```
+
+
+
+Shuffle_N1_I3
+Shuffle_N5_I3
+```{r}
+# Shuffle 3 index in 1 subject
+###########################################
+Shuffle_N1_I3 <- X
+
+# Loop over the subjects
+for (i in seq_along(N1)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N1[i]
+  
+  # Loop over the top 3 strongest edges and set one of their species to 0
+  for (j in 1:3) {  
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_3[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    
+    
+    # Swap the values
+    Shuffle_N1_I3[sbj, taxa_1] <- 0
+  }
+}
+
+check <- X - Shuffle_N1_I3
+
+
+
+# Shuffle 3 index in 5 subject
+###########################################
+Shuffle_N5_I3 <- X
+
+# Loop over the subjects
+for (i in seq_along(N5)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N5[i]
+  
+  # Loop over the top 3 edges
+  for (j in 1:3) {  
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_3[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    
+    # Swap the values
+    Shuffle_N5_I3[sbj, taxa_1] <- 0
+  }
+}
+
+check <- X - Shuffle_N5_I3
+
+```
+
+
+Shuffle_N1_I5
+Shuffle_N5_I5
+```{r}
+# Shuffle 5 index in 1 subject
+###########################################
+Shuffle_N1_I5 <- X
+
+# Loop over the subjects
+for (i in seq_along(N1)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N1[i]
+  
+  # Loop over the top 5 strongest edges and set one of their species to 0
+  for (j in 1:5) {  
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_5[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    
+    
+    # Swap the values
+    Shuffle_N1_I5[sbj, taxa_1] <- 0
+  }
+}
+
+check <- X - Shuffle_N1_I5
+
+
+
+# Shuffle 5 index in 5 subject
+###########################################
+Shuffle_N5_I5 <- X
+
+# Loop over the subjects
+for (i in seq_along(N5)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N5[i]
+  
+  # Loop over the top 5 edges
+  for (j in 1:5) {  
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_5[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    
+    # Swap the values
+    Shuffle_N5_I5[sbj, taxa_1] <- 0
+  }
+}
+
+check <- X - Shuffle_N5_I5
+
+```
+
+
+
+## 7.2 - Weak to Strong
+
+Iteration 2
+```{r}
+# Get Indices Without Overlapping Taxa
+#######################################################
+
+unique_edges <- function(cor_matrix, upper_tri_indices, n) {
+  selected_edges <- matrix(nrow = 0, ncol = 2) 
+  used_taxa <- c()
+  
+  # Order by abs cor value
+  ordered_edges <- order(abs(cor_matrix[upper_tri_indices]), decreasing = FALSE)
+  
+  for (idx in ordered_edges) {
+    edge <- upper_tri_indices[idx, , drop = FALSE] 
+    
+    # Extract taxa from edge
+    taxa_1 <- edge[1, 1]
+    taxa_2 <- edge[1, 2]
+    
+    # Check if already used
+    if (!(taxa_1 %in% used_taxa || taxa_2 %in% used_taxa)) {
+      selected_edges <- rbind(selected_edges, edge)
+      used_taxa <- c(used_taxa, taxa_1, taxa_2)
+    }
+    
+    if (nrow(selected_edges) == n) break
+  }
+  
+  return(selected_edges)
+}
+
+
+# Top 3 Edges Without Overlap
+Edge_3low <- unique_edges(Cor1_alt, upper_tri_indices, 3)
+
+# Top 5 Edges Without Overlap
+Edge_5low <- unique_edges(Cor1_alt, upper_tri_indices, 5)
+
+# Get N Value (Random Subjects)
+#######################################################
+set.seed(12345)
+N1 <- sample(rownames(X), 1)
+
+set.seed(12345)
+N5 <- sample(rownames(X), 5)
+
+```
+
+
+
+Shuffle_N1_I3_low
+Shuffle_N5_I3_low
+```{r}
+# Shuffle 3 index in 1 subject
+###########################################
+Shuffle_N1_I3_low <- X
+
+# Loop over the subjects
+for (i in seq_along(N1)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N1[i]
+  
+  # Loop over the lowest 3 edges and double both their counts
+  for (j in 1:3) {  
+    
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_3low[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    taxa_1_val <- Shuffle_N1_I3_low[sbj,taxa_1]
+    
+    # Taxa 2
+    taxa_2 <- as.numeric(Edge_3low[j,2])
+    taxa_2 <- paste("sp", taxa_2, sep = "")
+    taxa_2_val <- Shuffle_N1_I3_low[sbj,taxa_2]
+    
+    # Swap the values
+    Shuffle_N1_I3_low[sbj, taxa_1] <- taxa_1_val*2
+    Shuffle_N1_I3_low[sbj, taxa_2] <- taxa_2_val*2
+  }
+}
+
+check <- X - Shuffle_N1_I3_low
+
+
+
+# Shuffle 3 index in 5 subject
+###########################################
+Shuffle_N5_I3_low <- X
+
+# Loop over the subjects
+for (i in seq_along(N5)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N5[i]
+  
+  # Loop over lowest 5 edges and double their counts
+  for (j in 1:3) {  
+    
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_3low[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    taxa_1_val <- Shuffle_N5_I3_low[sbj,taxa_1]
+    
+    # Taxa 2
+    taxa_2 <- as.numeric(Edge_3low[j,2])
+    taxa_2 <- paste("sp", taxa_2, sep = "")
+    taxa_2_val <- Shuffle_N5_I3_low[sbj,taxa_2]
+    
+    # Swap the values
+    Shuffle_N5_I3_low[sbj, taxa_1] <- taxa_1_val*2
+    Shuffle_N5_I3_low[sbj, taxa_2] <- taxa_2_val*2
+  }
+}
+
+check <- X - Shuffle_N5_I3_low
+
+```
+
+
+
+
+
+Shuffle_N1_I5_low
+Shuffle_N5_I5_low
+```{r}
+# Shuffle 3 index in 1 subject
+###########################################
+Shuffle_N1_I5_low <- X
+
+# Loop over the subjects
+for (i in seq_along(N1)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N1[i]
+  
+  # Loop over the lowest 5 edges and double both their counts
+  for (j in 1:5) {  
+    
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_5low[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    taxa_1_val <- Shuffle_N1_I5_low[sbj,taxa_1]
+    
+    # Taxa 2
+    taxa_2 <- as.numeric(Edge_5low[j,2])
+    taxa_2 <- paste("sp", taxa_2, sep = "")
+    taxa_2_val <- Shuffle_N1_I5_low[sbj,taxa_2]
+    
+    # Swap the values
+    Shuffle_N1_I5_low[sbj, taxa_1] <- taxa_1_val*2
+    Shuffle_N1_I5_low[sbj, taxa_2] <- taxa_2_val*2
+  }
+}
+
+check <- X - Shuffle_N1_I5_low
+
+
+
+# Shuffle 5 index in 5 subject
+###########################################
+Shuffle_N5_I5_low <- X
+
+# Loop over the subjects
+for (i in seq_along(N5)) {
+  
+  # Specify rowname (subject ID)
+  sbj <- N5[i]
+  
+  # Loop over lowest 5 edges and double their counts
+  for (j in 1:5) {  
+    
+    # Taxa 1
+    taxa_1 <- as.numeric(Edge_5low[j,1])
+    taxa_1 <- paste("sp", taxa_1, sep = "")
+    taxa_1_val <- Shuffle_N5_I5_low[sbj,taxa_1]
+    
+    # Taxa 2
+    taxa_2 <- as.numeric(Edge_5low[j,2])
+    taxa_2 <- paste("sp", taxa_2, sep = "")
+    taxa_2_val <- Shuffle_N5_I5_low[sbj,taxa_2]
+    
+    # Swap the values
+    Shuffle_N5_I5_low[sbj, taxa_1] <- taxa_1_val*2
+    Shuffle_N5_I5_low[sbj, taxa_2] <- taxa_2_val*2
+  }
+}
+
+check <- X - Shuffle_N5_I5_low
+
+```
+
+
+
+
+## 7.3 - Save the Data
+Save the Data
+```{r}
+# Iteration 1
+#################################################################
+# N1, I3
+write.csv(Shuffle_N1_I3, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N1_I3.csv"))
+# N5, I3
+write.csv(Shuffle_N5_I3, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N5_I3.csv"))
+
+# N1, I5
+write.csv(Shuffle_N1_I5, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N1_I5.csv"))
+
+# N5, I5
+write.csv(Shuffle_N5_I5, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N5_I5.csv"))
+
+
+# Iteration 2
+#################################################################
+# N1, I3
+write.csv(Shuffle_N1_I3_low, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N1_I3_low.csv"))
+# N5, I3
+write.csv(Shuffle_N5_I3_low, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N5_I3_low.csv"))
+
+# N1, I5
+write.csv(Shuffle_N1_I5_low, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N1_I5_low.csv"))
+
+# N5, I5
+write.csv(Shuffle_N5_I5_low, here("Data","GLV_SimData","Dataset_2g",
+                              "Shuffle_N5_I5_low.csv"))
+```
+
+
+
+
+
+
+

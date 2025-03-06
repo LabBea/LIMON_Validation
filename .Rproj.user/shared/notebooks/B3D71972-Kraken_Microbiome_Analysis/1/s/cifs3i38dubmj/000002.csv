@@ -1,0 +1,14 @@
+"0","```r
+# Metadata IDs
+batch2_meta <- read.csv(here(\"Data\", \"MetaData\", \"SraRunTable.csv\"))
+batch2_meta <- batch2_meta[,c(1,9)]
+batch2_meta <- batch2_meta %>% rename(\"Sample\" = \"Run\") %>% 
+                               rename(\"SampleID\" = \"biospecimen_repository_sample_id\")
+
+# Counts
+Batch2_counts <- Batch2[[\"Filt_Counts\"]]
+batch2_meta <- batch2_meta %>% filter(Sample %in% Batch2_counts$Sample)
+Batch2_counts <- merge(batch2_meta, Batch2_counts, by = \"Sample\", all=TRUE)
+Batch2_counts <- Batch2_counts %>% dplyr::select(-Sample)
+Batch2_counts <- Batch2_counts %>% column_to_rownames(\"SampleID\")
+```"

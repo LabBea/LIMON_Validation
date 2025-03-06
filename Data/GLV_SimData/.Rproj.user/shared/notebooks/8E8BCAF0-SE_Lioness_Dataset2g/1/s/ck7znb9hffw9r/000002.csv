@@ -1,0 +1,42 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBGaWx0ZXIgdG8gdG9wIDEwIGNoYW5nZWQgZWRnZXNcbnRvcF9lZGdlcyA8LSBDb21iaW5lZF9kYXRhX3NvcnRlZGVkZ2UgJT4lIHNsaWNlX2hlYWQobiA9IDEwKVxuXG4jIFBsb3RcbmdncGxvdCh0b3BfZWRnZXMsIGFlcyh4ID0gcmVvcmRlcihwYXN0ZShTb3VyY2UsIFNpbmssIHNlcD1cIi1cIiksIGFicyhFZGdlX2RpZmYpKSwgXG4gICAgICAgICAgICAgICAgICAgICAgeSA9IGFicyhFZGdlX2RpZmYpLCBmaWxsID0gU2FtcGxlSUQpKSArXG4gIGdlb21fY29sKCkgK1xuICBjb29yZF9mbGlwKCkgK1xuICBzY2FsZV9maWxsX2JyZXdlcihwYWxldHRlID0gXCJTcGVjdHJhbFwiKSArXG4gIGxhYnMoeCA9IFwiRWRnZSAoU291cmNlIC0gU2luaylcIiwgeSA9IFwiQWJzb2x1dGUgRWRnZSBEaWZmZXJlbmNlXCIsIFxuICAgICAgIHRpdGxlID0gXCJUb3AgMTAgTW9zdCBBbHRlcmVkIEVkZ2VzXCIpICtcbiAgdGhlbWVfbWluaW1hbCgpICtcbiAgdGhlbWUoYXhpcy50ZXh0LnggPSBlbGVtZW50X3RleHQoZmFtaWx5ID0gXCJzYW5zXCIsIGNvbG9yID0gXCJibGFja1wiLCBzaXplID0gMTQpLFxuICAgICAgICBheGlzLnRleHQueSA9IGVsZW1lbnRfdGV4dChmYW1pbHkgPSBcInNhbnNcIiwgY29sb3IgPSBcImJsYWNrXCIsIHNpemUgPSAxNCksXG4gICAgICAgIGF4aXMudGl0bGUueCA9IGVsZW1lbnRfdGV4dChmYW1pbHkgPSBcInNhbnNcIiwgY29sb3IgPSBcImJsYWNrXCIsIHNpemUgPSAxNCksXG4gICAgICAgIGF4aXMudGl0bGUueSA9IGVsZW1lbnRfdGV4dChmYW1pbHkgPSBcInNhbnNcIiwgY29sb3IgPSBcImJsYWNrXCIsIHNpemUgPSAxNCkpXG5gYGAifQ== -->
+
+```r
+# Filter to top 10 changed edges
+top_edges <- Combined_data_sortededge %>% slice_head(n = 10)
+
+# Plot
+ggplot(top_edges, aes(x = reorder(paste(Source, Sink, sep=\"-\"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = SampleID)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_brewer(palette = \"Spectral\") +
+  labs(x = \"Edge (Source - Sink)\", y = \"Absolute Edge Difference\", 
+       title = \"Top 10 Most Altered Edges\") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.text.y = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.title.x = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.title.y = element_text(family = \"sans\", color = \"black\", size = 14))
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Filter to top 10 changed edges
+top_edges <- Combined_data_sortededge %>% slice_head(n = 10)
+
+# Plot
+ggplot(top_edges, aes(x = reorder(paste(Source, Sink, sep=\"-\"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = SampleID)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_brewer(palette = \"Spectral\") +
+  labs(x = \"Edge (Source - Sink)\", y = \"Absolute Edge Difference\", 
+       title = \"Top 10 Most Altered Edges\") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.text.y = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.title.x = element_text(family = \"sans\", color = \"black\", size = 14),
+        axis.title.y = element_text(family = \"sans\", color = \"black\", size = 14))
+```"

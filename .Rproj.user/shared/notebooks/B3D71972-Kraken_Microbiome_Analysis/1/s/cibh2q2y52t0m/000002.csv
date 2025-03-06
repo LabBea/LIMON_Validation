@@ -1,0 +1,74 @@
+"0","```r
+
+# Function to parse species-level data from a Kraken report
+parse_kraken_report_species <- function(data) {
+  # Initialize an empty data frame for species-level taxa
+  taxa_df <- data.frame(Kingdom = character(), Phylum = character(), Class = character(),
+                        Order = character(), Family = character(), Genus = character(),
+                        Species = character(), Abundance = numeric(), stringsAsFactors = FALSE)
+  
+  # Initialize placeholders for each taxonomic level
+  taxonomic_levels <- list(Kingdom = NA, Phylum = NA, Class = NA, Order = NA, Family = NA,
+                           Genus = NA, Species = NA)
+  
+  # Loop through each row to assign taxa based on rank code
+  for (i in 1:nrow(data)) {
+    # Extract abundance, rank code, and name
+    abundance <- as.numeric(data[[i, 1]])  # Adjust column index if needed
+    rank_code <- as.character(data[[i, 4]]) # Adjust column index if needed
+    name <- as.character(data[[i, 6]])      # Adjust column index if needed
+    
+    # Map rank codes to the corresponding taxonomic level
+    switch(rank_code,
+           \"D\" = { taxonomic_levels$Kingdom <- name },
+           \"P\" = { taxonomic_levels$Phylum <- name },
+           \"C\" = { taxonomic_levels$Class <- name },
+           \"O\" = { taxonomic_levels$Order <- name },
+           \"F\" = { taxonomic_levels$Family <- name },
+           \"G\" = { taxonomic_levels$Genus <- name },
+           \"S\" = { 
+             taxonomic_levels$Species <- name
+             
+             # Add row to taxa_df for each species-level entry
+             taxa_df <- taxa_df %>% add_row(Kingdom = taxonomic_levels$Kingdom,
+                                            Phylum = taxonomic_levels$Phylum,
+                                            Class = taxonomic_levels$Class,
+                                            Order = taxonomic_levels$Order,
+                                            Family = taxonomic_levels$Family,
+                                            Genus = taxonomic_levels$Genus,
+                                            Species = taxonomic_levels$Species,
+                                            Abundance = abundance)
+           },
+           # Reset ranks for sub-ranks (e.g., G1, G2, etc.) if encountered
+           {
+             if (grepl(\"^D[0-9]*$\", rank_code)) taxonomic_levels$Kingdom <- name
+             if (grepl(\"^P[0-9]*$\", rank_code)) taxonomic_levels$Phylum <- name
+             if (grepl(\"^C[0-9]*$\", rank_code)) taxonomic_levels$Class <- name
+             if (grepl(\"^O[0-9]*$\", rank_code)) taxonomic_levels$Order <- name
+             if (grepl(\"^F[0-9]*$\", rank_code)) taxonomic_levels$Family <- name
+             if (grepl(\"^G[0-9]*$\", rank_code)) taxonomic_levels$Genus <- name
+           })
+  }
+  
+  # Remove leading/trailing spaces from all character columns
+  taxa_df <- taxa_df %>% mutate(across(where(is.character), trimws))
+  
+  return(taxa_df)
+}
+
+kraken_files <- list.files(
+  path = here(\"Data\", \"Microbiome_Data\", \"Kraken\", \"kreports\"),
+  full.names = TRUE,
+  pattern = \"\\.k2report$\"
+)
+
+# Process all Kraken report files and combine results into a single summary table
+species_table <- map_dfr(kraken_files, ~ parse_kraken_report_species(read_tsv(.x, col_names = FALSE)))
+
+# Filter to those in Count Table
+species_table2 <- species_table %>%
+  filter(Species %in% colnames(Count_data)) %>%
+  distinct(Species, .keep_all = TRUE) %>% dplyr::select(-Abundance)
+rownames(species_table2) <- species_table2$Species
+species_table2$Kingdom <- \"Bacteria\"
+```"

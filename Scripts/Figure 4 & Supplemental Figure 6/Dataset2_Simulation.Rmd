@@ -1,0 +1,1087 @@
+---
+title: "Data Simulation for Subject sample size"
+output: html_notebook
+---
+
+In this script, simulate 5 different datasets based on N value. Each will be a GLV model of 50 taxa over 10 time points with the same starting correlation matrix. N values are 10, 20, 50, 75 and 100 subjects. The saved values are the counts+cov and counts+cov+0s. 
+
+# 1. Load Library
+*** 
+
+
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+```
+
+
+
+# 2. Simulate N = 10
+*** 
+
+__Simulate Counts__  
+Simulate GLV for 10 individuals, 50 species, 10 time points, dense n
+```{r}
+# Set seed
+set.seed(12345)
+
+# Step 1 Run GLV for n number of subject and timepoints
+###############################################################################
+
+# Generate interactions from uniform distribution
+A_uniform <- randomA(
+    n_species = 50,
+    diagonal = -1.0,
+    connectance = 0.9)
+
+# Create an empty list to store the count tables for each subject
+count_tables <- list()
+
+
+# Loop through 10 subjects and generate count tables for each
+for (i in 1:10) {
+  
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+ # Generalized Lotka-Volterra (gLV)
+  tse_glv <- simulateGLV(n_species = 50,
+                       A = A_uniform,
+                       t_start = 0, 
+                       t_store = 10,
+                       stochastic = FALSE,
+                       norm = FALSE,
+                       error_variance = 0.01)
+  
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables[[i]] <- t(sim_data)
+}
+
+# Step 2 - Merge together
+###############################################################################
+# Combine all count tables into one data frame
+combined_count_table <- do.call(rbind, count_tables)
+
+# Rename the rownames based on the count table number
+rownames(combined_count_table) <- paste0("Sbj", rep(1:10, each = nrow(count_tables[[1]])), "_Time", 1:10)
+
+```
+
+
+__Create Fake Metadata__  
+1. Sex (M or F, 50/50 Ratio)
+2. Age - sample from between 18 and 45
+3. BMI - sample between 18 and 35
+
+Make Metadata and merge with the count data
+```{r}
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:10,ID = 1:10)
+rownames(meta_data) <- rownames(combined_count_table)
+# Set seed
+set.seed(12345)
+meta_data$Sex <- rep(c(0, 1), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$Age <- rep(sample(18:45, 10, replace = TRUE), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$BMI <- rep(sample(18:35, 10, replace = TRUE), each = 10)
+
+# Center the continuous variables
+meta_data$Age <- meta_data$Age - mean(meta_data$Age)
+meta_data$BMI <- meta_data$BMI - mean(meta_data$BMI)
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+```
+
+
+Add in biological covariates
+```{r}
+# Set seed
+set.seed(12345)
+# Addin covariates
+########################################################################################
+# Set up new dataframe
+Long_data_new <- meta_counts
+
+
+# Loop running the LM to get new variables with error that has a range of values
+
+# Taxa 21 - 30 will have Sex effect
+for (i in 26:35) {
+  error <- rnorm(nrow(Long_data_new), mean = 1, sd = 0.6)
+  Long_data_new[, i] <- Long_data_new[, i] + 8 * Long_data_new$Sex + error
+}
+
+# round the counts to bring them back up to 0
+########################################################################################
+
+# Add the minimum value to bring everything up to at least 0
+count_table1 <- Long_data_new[,6:55]
+
+
+# scale to positive and make larger
+count_table1 <- count_table1 + abs(min(count_table1))
+count_table1 <- round(count_table1*10)
+
+#change Long_data_new
+Long_data_new[,6:55] <- count_table1
+
+# Correlation matrix
+hist(as.matrix(Long_data_new[,6:55]), breaks = 100, main = "Distribution of GLV Data +cov", xlab = "Counts")
+cor_raw1 <- cor((Long_data_new[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of data + covariates")
+```
+
+
+
+Now Add in 0s
+```{r}
+# Set up new dataframe
+predata_0 <- count_table1
+
+# Add the 0s back in
+########################################################################################
+
+
+# Step 1: Calculate total counts for each column
+total_counts <- colSums(predata_0)
+
+
+# Step 2: Create probability gradient
+gradient <- seq(0.5, 0.2, length.out = ncol(predata_0))
+
+# Step 3: Make the probability gradient inverse to total counts (ie higher total value, lower proportion of 0s)
+total_counts <- total_counts[order(total_counts)]
+gradient <- gradient[order(-gradient)]
+
+# Step 4 & 5: Generate random numbers and set counts to 0 based on probability gradient
+
+for (i in seq_along(total_counts)) {
+  prob <- gradient[i]
+  # Calculate number of 0s to add based on probability
+  num_zeros <- sum(runif(nrow(predata_0)) <= prob)
+  # Randomly select rows to set to 0
+  # Set seed
+  set.seed(12345+i)
+  rows_to_zero <- sample(nrow(predata_0), num_zeros)
+  # Set counts to 0
+  predata_0[rows_to_zero, i] <- 0
+}
+
+# merge with metadata for plotting
+zero_data1 <- merge(meta_data, predata_0, by = 0)
+zero_data1 <- column_to_rownames(zero_data1, "Row.names")
+#round the counts
+zero_data1[,6:55] <- round(zero_data1[,6:55])
+```
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(zero_data1, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series of N=10, 0s")
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(zero_data1[,6:55]), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+
+# Correlation matrix
+cor_raw1 <- cor((zero_data1[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of 0 inflated no covariates")
+```
+
+
+Save the Counts
+```{r}
+# Make more like counts
+meta_counts[,6:55] <- round(meta_counts[,6:55]*10)
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2", "GLV_N10.csv"))
+write.csv(Long_data_new, here("Data","GLV_SimData", "Dataset_2","GLV_Cov_N10.csv"))
+write.csv(zero_data1, here("Data","GLV_SimData", "Dataset_2","GLV_CovZero_N10.csv"))
+```
+
+
+# 3. Simulate N = 20
+*** 
+
+__Simulate Counts__  
+Simulate GLV for 20 individuals, 50 species, 10 timepoints, dense n
+```{r}
+# Set seed
+set.seed(12345)
+
+# Step 1 Run GLV for n number of subject and timepoints
+###############################################################################
+
+# Generate interactions from uniform distribution
+A_uniform <- randomA(
+    n_species = 50,
+    diagonal = -1.0,
+    connectance = 0.9)
+
+# Create an empty list to store the count tables for each subject
+count_tables <- list()
+
+
+#Loop through 20 subjects and generate count tables for each
+for (i in 1:20) {
+    
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+ # Generalized Lotka-Volterra (gLV)
+  tse_glv <- simulateGLV(n_species = 50,
+                       A = A_uniform,
+                       t_start = 0, 
+                       t_store = 10,
+                       stochastic = FALSE,
+                       norm = FALSE,
+                       error_variance = 0.01)
+  
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables[[i]] <- t(sim_data)
+}
+
+# Step 2 - Merge together
+###############################################################################
+# Combine all count tables into one data frame
+combined_count_table <- do.call(rbind, count_tables)
+
+# Rename the rownames based on the count table number
+rownames(combined_count_table) <- paste0("Sbj", rep(1:20, each = nrow(count_tables[[1]])), "_Time", 1:10)
+```
+
+
+__Create Fake Metadata__  
+1. Sex (M or F, 50/50 Ratio)
+2. Age - sample from between 18 and 45
+3. BMI - sample between 18 and 35
+
+Make Metadata and merge with the count data
+```{r}
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:10,ID = 1:20)
+rownames(meta_data) <- rownames(combined_count_table)
+# Set seed
+set.seed(12345)
+meta_data$Sex <- rep(c(0, 1), each = 20)
+# Set seed
+set.seed(12345)
+meta_data$Age <- rep(sample(18:45, 20, replace = TRUE), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$BMI <- rep(sample(18:35, 20, replace = TRUE), each = 10)
+
+# Center the continuous variables
+meta_data$Age <- meta_data$Age - mean(meta_data$Age)
+meta_data$BMI <- meta_data$BMI - mean(meta_data$BMI)
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+
+
+```
+
+
+Add in biological covariates
+```{r}
+# Set seed
+set.seed(12345)
+# Addin covariates
+########################################################################################
+# Set up new dataframe
+Long_data_new <- meta_counts
+
+
+# Loop running the LM to get new variables with error that has a range of values
+# Taxa 21 - 30 will have Sex effect
+for (i in 26:35) {
+  error <- rnorm(nrow(Long_data_new), mean = 1, sd = 0.6)
+  Long_data_new[, i] <- Long_data_new[, i] + 8 * Long_data_new$Sex #+ error
+}
+
+
+# round the counts to bring them back up to 0
+########################################################################################
+
+# Add the minimum value to bring everything up to at least 0
+count_table1 <- Long_data_new[,6:55]
+
+
+# scale to positive and make larger
+count_table1 <- count_table1 + abs(min(count_table1))
+count_table1 <- round(count_table1*10)
+
+#change Long_data_new
+Long_data_new[,6:55] <- count_table1
+```
+
+
+
+Now Add in 0s
+```{r}
+# Set up new dataframe
+predata_0 <- count_table1
+
+# Add the 0s back in
+########################################################################################
+
+
+# Step 1: Calculate total counts for each column
+total_counts <- colSums(predata_0)
+
+
+# Step 2: Create probability gradient
+gradient <- seq(0.5, 0.2, length.out = ncol(predata_0))
+
+# Step 3: Make the probability gradient inverse to total counts (ie higher total value, lower proportion of 0s)
+total_counts <- total_counts[order(total_counts)]
+gradient <- gradient[order(-gradient)]
+
+# Step 4 & 5: Generate random numbers and set counts to 0 based on probability gradient
+
+for (i in seq_along(total_counts)) {
+  prob <- gradient[i]
+  # Calculate number of 0s to add based on probability
+  num_zeros <- sum(runif(nrow(predata_0)) <= prob)
+  # Randomly select rows to set to 0
+  # Set seed
+  set.seed(12345+i)
+  rows_to_zero <- sample(nrow(predata_0), num_zeros)
+  # Set counts to 0
+  predata_0[rows_to_zero, i] <- 0
+}
+
+# merge with metadata for plotting
+zero_data1 <- merge(meta_data, predata_0, by = 0)
+zero_data1 <- column_to_rownames(zero_data1, "Row.names")
+#round the counts
+zero_data1[,6:55] <- round(zero_data1[,6:55])
+```
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(zero_data1, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series of N=20, 0s")
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(zero_data1[,6:55]), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+
+# Correlation matrix
+cor_raw1 <- cor((zero_data1[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of 0 inflated no covariates")
+```
+
+
+Save the Counts
+```{r}
+meta_counts[,6:55] <- round(meta_counts[,6:55]*10)
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2","GLV_N20.csv"))
+write.csv(Long_data_new, here("Data","GLV_SimData", "Dataset_2","GLV_Cov_N20.csv"))
+write.csv(zero_data1, here("Data","GLV_SimData", "Dataset_2","GLV_CovZero_N20.csv"))
+```
+
+
+# 4. Simulate N = 50
+*** 
+__Simulate Counts__  
+Simulate GLV for 50 individuals, 50 species, 10 timepoints, dense n
+```{r}
+# Set seed
+set.seed(12345)
+
+# Step 1 Run GLV for n number of subject and timepoints
+###############################################################################
+
+# Generate interactions from uniform distribution
+A_uniform <- randomA(
+    n_species = 50,
+    diagonal = -1.0,
+    connectance = 0.9)
+
+# Create an empty list to store the count tables for each subject
+count_tables <- list()
+
+
+# Loop through 50 subjects and generate count tables for each
+for (i in 1:50) {
+    
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+ # Generalized Lotka-Volterra (gLV)
+  tse_glv <- simulateGLV(n_species = 50,
+                       #x0 = NULL,
+                       A = A_uniform,
+                       t_start = 0, 
+                       t_store = 10,
+                       stochastic = FALSE,
+                       norm = FALSE,
+                       error_variance = 0.01)
+  
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables[[i]] <- t(sim_data)
+}
+
+# Step 2 - Merge together
+###############################################################################
+# Combine all count tables into one data frame
+combined_count_table <- do.call(rbind, count_tables)
+
+# Rename the rownames based on the count table number
+rownames(combined_count_table) <- paste0("Sbj", rep(1:50, each = nrow(count_tables[[1]])), "_Time", 1:10)
+
+```
+
+
+__Create Fake Metadata__  
+1. Sex (M or F, 50/50 Ratio)
+2. Age - sample from between 18 and 45
+3. BMI - sample between 18 and 35
+
+Make Metadata and merge with the count data
+```{r}
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:10,ID = 1:50)
+rownames(meta_data) <- rownames(combined_count_table)
+# Set seed
+set.seed(12345)
+meta_data$Sex <- rep(c(0, 1), each = 50)
+# Set seed
+set.seed(12345)
+meta_data$Age <- rep(sample(18:45, 50, replace = TRUE), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$BMI <- rep(sample(18:35, 50, replace = TRUE), each = 10)
+
+# Center the continuous variables
+meta_data$Age <- meta_data$Age - mean(meta_data$Age)
+meta_data$BMI <- meta_data$BMI - mean(meta_data$BMI)
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+
+
+```
+
+
+Add in biological covariates
+```{r}
+# Set seed
+set.seed(12345)
+# Addin covariates
+########################################################################################
+# Set up new dataframe
+Long_data_new <- meta_counts
+
+
+# Loop running the LM to get new variables with error that has a range of values
+# Taxa 21 - 30 will have Sex effect
+for (i in 26:35) {
+  error <- rnorm(nrow(Long_data_new), mean = 1, sd = 0.6)
+  Long_data_new[, i] <- Long_data_new[, i] + 8 * Long_data_new$Sex #+ error
+}
+
+# round the counts to bring them back up to 0
+########################################################################################
+
+# Add the minimum value to bring everything up to at least 0
+count_table1 <- Long_data_new[,6:55]
+
+
+# scale to positive and make larger
+count_table1 <- count_table1 + abs(min(count_table1))
+count_table1 <- round(count_table1*10)
+
+#change Long_data_new
+Long_data_new[,6:55] <- count_table1
+```
+
+
+
+Now Add in 0s
+```{r}
+# Set up new dataframe
+predata_0 <- count_table1
+
+# Add the 0s back in
+########################################################################################
+
+
+# Step 1: Calculate total counts for each column
+total_counts <- colSums(predata_0)
+
+
+# Step 2: Create probability gradient
+gradient <- seq(0.5, 0.2, length.out = ncol(predata_0))
+
+# Step 3: Make the probability gradient inverse to total counts (ie higher total value, lower proportion of 0s)
+total_counts <- total_counts[order(total_counts)]
+gradient <- gradient[order(-gradient)]
+
+# Step 4 & 5: Generate random numbers and set counts to 0 based on probability gradient
+
+for (i in seq_along(total_counts)) {
+  prob <- gradient[i]
+  # Calculate number of 0s to add based on probability
+  num_zeros <- sum(runif(nrow(predata_0)) <= prob)
+  # Randomly select rows to set to 0
+  # Set seed
+  set.seed(12345+i)
+  rows_to_zero <- sample(nrow(predata_0), num_zeros)
+  # Set counts to 0
+  predata_0[rows_to_zero, i] <- 0
+}
+
+# merge with metadata for plotting
+zero_data1 <- merge(meta_data, predata_0, by = 0)
+zero_data1 <- column_to_rownames(zero_data1, "Row.names")
+#round the counts
+zero_data1[,6:55] <- round(zero_data1[,6:55])
+```
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(zero_data1, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series of N=50, 0s")
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(zero_data1[,6:55]), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+
+# Correlation matrix
+cor_raw1 <- cor((zero_data1[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of 0 inflated no covariates")
+```
+
+
+Save the Counts
+```{r}
+meta_counts[,6:55] <- round(meta_counts[,6:55]*10)
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2","GLV_N50.csv"))
+write.csv(Long_data_new, here("Data","GLV_SimData", "Dataset_2","GLV_Cov_N50.csv"))
+write.csv(zero_data1, here("Data","GLV_SimData", "Dataset_2","GLV_CovZero_N50.csv"))
+```
+
+
+
+# 5. Simulate N = 75
+*** 
+__Simulate Counts__  
+Simulate GLV for 75 individuals, 50 species, 10 timepoints, dense n
+```{r}
+# Set seed
+set.seed(12345)
+
+# Step 1 Run GLV for n number of subject and timepoints
+###############################################################################
+
+# Generate interactions from uniform distribution
+A_uniform <- randomA(
+    n_species = 50,
+    diagonal = -1.0,
+    connectance = 0.9)
+
+# Create an empty list to store the count tables for each subject
+count_tables <- list()
+
+
+# Loop through 75 subjects and generate count tables for each
+for (i in 1:75) {
+    
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+ # Generalized Lotka-Volterra (gLV)
+  tse_glv <- simulateGLV(n_species = 50,
+                       #x0 = NULL,
+                       A = A_uniform,
+                       t_start = 0, 
+                       t_store = 10,
+                       stochastic = FALSE,
+                       norm = FALSE,
+                       error_variance = 0.01)
+  
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables[[i]] <- t(sim_data)
+}
+
+# Step 2 - Merge together
+###############################################################################
+# Combine all count tables into one data frame
+combined_count_table <- do.call(rbind, count_tables)
+
+# Rename the rownames based on the count table number
+rownames(combined_count_table) <- paste0("Sbj", rep(1:75, each = nrow(count_tables[[1]])), "_Time", 1:10)
+
+```
+
+
+__Create Fake Metadata__  
+1. Sex (M or F, 50/50 Ratio)
+2. Age - sample from between 18 and 45
+3. BMI - sample between 18 and 35
+
+Make Metadata and merge with the count data
+```{r}
+# Set seed
+set.seed(12345)
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:10,ID = 1:75)
+rownames(meta_data) <- rownames(combined_count_table)
+# Set seed
+set.seed(12345)
+meta_data$Sex <- rep(c(0, 1), each = 75)
+# Set seed
+set.seed(12345)
+meta_data$Age <- rep(sample(18:45, 75, replace = TRUE), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$BMI <- rep(sample(18:35, 75, replace = TRUE), each = 10)
+
+# Center the continuous variables
+meta_data$Age <- meta_data$Age - mean(meta_data$Age)
+meta_data$BMI <- meta_data$BMI - mean(meta_data$BMI)
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+
+
+```
+
+
+Add in biological covariates
+```{r}
+# Set seed
+set.seed(12345)
+# Addin covariates
+########################################################################################
+# Set up new dataframe
+Long_data_new <- meta_counts
+
+
+# Loop running the LM to get new variables with error that has a range of values
+# Taxa 21 - 30 will have Sex effect
+for (i in 26:35) {
+  error <- rnorm(nrow(Long_data_new), mean = 1, sd = 0.6)
+  Long_data_new[, i] <- Long_data_new[, i] + 8 * Long_data_new$Sex #+ error
+}
+
+# round the counts to bring them back up to 0
+########################################################################################
+
+# Add the minimum value to bring everything up to at least 0
+count_table1 <- Long_data_new[,6:55]
+
+
+# scale to positive and make larger
+count_table1 <- count_table1 + abs(min(count_table1))
+count_table1 <- round(count_table1*10)
+
+#change Long_data_new
+Long_data_new[,6:55] <- count_table1
+```
+
+
+
+Now Add in 0s
+```{r}
+# Set up new dataframe
+predata_0 <- count_table1
+
+# Add the 0s back in
+########################################################################################
+
+
+# Step 1: Calculate total counts for each column
+total_counts <- colSums(predata_0)
+
+
+# Step 2: Create probability gradient
+gradient <- seq(0.5, 0.2, length.out = ncol(predata_0))
+
+# Step 3: Make the probability gradient inverse to total counts (ie higher total value, lower proportion of 0s)
+total_counts <- total_counts[order(total_counts)]
+gradient <- gradient[order(-gradient)]
+
+# Step 4 & 5: Generate random numbers and set counts to 0 based on probability gradient
+
+for (i in seq_along(total_counts)) {
+  prob <- gradient[i]
+  # Calculate number of 0s to add based on probability
+  num_zeros <- sum(runif(nrow(predata_0)) <= prob)
+  # Randomly select rows to set to 0
+  # Set seed
+  set.seed(12345+i)
+  rows_to_zero <- sample(nrow(predata_0), num_zeros)
+  # Set counts to 0
+  predata_0[rows_to_zero, i] <- 0
+}
+
+# merge with metadata for plotting
+zero_data1 <- merge(meta_data, predata_0, by = 0)
+zero_data1 <- column_to_rownames(zero_data1, "Row.names")
+#round the counts
+zero_data1[,6:55] <- round(zero_data1[,6:55])
+```
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(zero_data1, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series of N=50, 0s")
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(zero_data1[,6:55]), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+
+# Correlation matrix
+cor_raw1 <- cor((zero_data1[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of 0 inflated no covariates")
+```
+
+
+Save the Counts
+```{r}
+meta_counts[,6:55] <- round(meta_counts[,6:55]*10)
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2","GLV_N75.csv"))
+write.csv(Long_data_new, here("Data","GLV_SimData", "Dataset_2","GLV_Cov_N75.csv"))
+write.csv(zero_data1, here("Data","GLV_SimData", "Dataset_2","GLV_CovZero_N75.csv"))
+```
+
+
+
+
+
+# 6. Simulate N = 100
+*** 
+
+__Simulate Counts__  
+Simulate GLV for 100 individuals, 50 species, 10 timepoints, dense n
+```{r}
+# Set seed
+set.seed(12345)
+
+# Step 1 Run GLV for n number of subject and timepoints
+###############################################################################
+
+# Generate interactions from uniform distribution
+A_uniform <- randomA(
+    n_species = 50,
+    diagonal = -1.0,
+    connectance = 0.9)
+
+# Create an empty list to store the count tables for each subject
+count_tables <- list()
+
+
+# Loop through 100 subjects and generate count tables for each
+for (i in 1:100) {
+    
+  # Set the seed for each subject
+  set.seed(12345 + i)  
+ # Generalized Lotka-Volterra (gLV)
+  tse_glv <- simulateGLV(n_species = 50,
+                       A = A_uniform,
+                       t_start = 0, 
+                       t_store = 10,
+                       stochastic = FALSE,
+                       norm = FALSE,
+                       error_variance = 0.01)
+  
+  # Get the count table
+  sim_data <- tse_glv@assays@data@listData[["counts"]]
+  
+  # Store the count table in the list
+  count_tables[[i]] <- t(sim_data)
+}
+
+# Step 2 - Merge together
+###############################################################################
+# Combine all count tables into one data frame
+combined_count_table <- do.call(rbind, count_tables)
+
+# Rename the rownames based on the count table number
+rownames(combined_count_table) <- paste0("Sbj", rep(1:100, each = nrow(count_tables[[1]])), "_Time", 1:10)
+
+```
+
+
+__Create Fake Metadata__  
+1. Sex (M or F, 50/50 Ratio)
+2. Age - sample from between 18 and 45
+3. BMI - sample between 18 and 35
+
+Make Metadata and merge with the count data
+```{r}
+# Df 1 is Metadata
+########################################################
+meta_data <-  expand.grid(Time = 1:10,ID = 1:100)
+rownames(meta_data) <- rownames(combined_count_table)
+# Set seed
+set.seed(12345)
+meta_data$Sex <- rep(c(0, 1), each = 100)
+# Set seed
+set.seed(12345)
+meta_data$Age <- rep(sample(18:45, 100, replace = TRUE), each = 10)
+# Set seed
+set.seed(12345)
+meta_data$BMI <- rep(sample(18:35, 100, replace = TRUE), each = 10)
+
+# Center the continuous variables
+meta_data$Age <- meta_data$Age - mean(meta_data$Age)
+meta_data$BMI <- meta_data$BMI - mean(meta_data$BMI)
+
+
+# Df 2 is Metadata merged with Counts
+########################################################
+#Round off and increase
+combined_count_table <- as.data.frame(combined_count_table + abs(min(combined_count_table)))
+combined_count_table <- (combined_count_table)*10
+meta_counts <- base::merge(meta_data, combined_count_table, by ="row.names", all = TRUE)
+meta_counts <- column_to_rownames(meta_counts, "Row.names")
+
+
+```
+
+
+Add in biological covariates
+```{r}
+# Set seed
+set.seed(12345)
+# Addin covariates
+########################################################################################
+# Set up new dataframe
+Long_data_new <- meta_counts
+
+
+# Loop running the LM to get new variables with error that has a range of values
+# Taxa 21 - 30 will have Sex effect
+for (i in 26:35) {
+  error <- rnorm(nrow(Long_data_new), mean = 1, sd = 0.6)
+  Long_data_new[, i] <- Long_data_new[, i] + 8 * Long_data_new$Sex #+ error
+}
+
+# round the counts to bring them back up to 0
+########################################################################################
+
+# Add the minimum value to bring everything up to at least 0
+count_table1 <- Long_data_new[,6:55]
+
+
+# scale to positive and make larger
+count_table1 <- count_table1 + abs(min(count_table1))
+count_table1 <- round(count_table1*10)
+
+#change Long_data_new
+Long_data_new[,6:55] <- count_table1
+```
+
+
+
+Now Add in 0s
+```{r}
+# Set up new dataframe
+predata_0 <- count_table1
+
+# Add the 0s back in
+########################################################################################
+
+
+# Step 1: Calculate total counts for each column
+total_counts <- colSums(predata_0)
+
+
+# Step 2: Create probability gradient
+gradient <- seq(0.5, 0.2, length.out = ncol(predata_0))
+
+# Step 3: Make the probability gradient inverse to total counts (ie higher total value, lower proportion of 0s)
+total_counts <- total_counts[order(total_counts)]
+gradient <- gradient[order(-gradient)]
+
+# Step 4 & 5: Generate random numbers and set counts to 0 based on probability gradient
+
+for (i in seq_along(total_counts)) {
+  prob <- gradient[i]
+  # Calculate number of 0s to add based on probability
+  num_zeros <- sum(runif(nrow(predata_0)) <= prob)
+  # Randomly select rows to set to 0
+  # Set seed
+  set.seed(12345+i)
+  rows_to_zero <- sample(nrow(predata_0), num_zeros)
+  # Set counts to 0
+  predata_0[rows_to_zero, i] <- 0
+}
+
+# merge with metadata for plotting
+zero_data1 <- merge(meta_data, predata_0, by = 0)
+zero_data1 <- column_to_rownames(zero_data1, "Row.names")
+#round the counts
+zero_data1[,6:55] <- round(zero_data1[,6:55])
+```
+
+Graphs to Check
+```{r}
+# Individual Species Plots
+########################################################
+# Pivot to long data
+count_long <- tidyr::pivot_longer(zero_data1, cols = starts_with("sp"), names_to = "Species")
+
+# Plot the data
+count_long %>%
+  ggplot(aes(x = Time, y = value, colour = as.factor(ID),
+             group = as.factor(ID), linetype = as.factor(ID))) +
+  geom_line() + 
+  geom_point() +
+  geom_jitter() +
+  ylab("Count") +
+  labs(linetype = "ID", color = "ID") +
+  facet_wrap(~ Species) +  # Create a panel for each species
+  theme(legend.position = "none") +
+  ggtitle("Time Series of N=100, 0s")
+
+
+# Distribution of counts
+########################################################
+hist(as.matrix(zero_data1[,6:55]), breaks = 100, main = "Distribution of GLV Data", xlab = "Counts")
+
+# Correlation matrix
+cor_raw1 <- cor((zero_data1[,6:55]), method = "spearman")
+heatmap(cor_raw1, Colv = NA, Rowv = NA, main = "Correlation of 0 inflated no covariates")
+```
+
+
+Save the Counts
+```{r}
+meta_counts[,6:55] <- round(meta_counts[,6:55]*10)
+write.csv(meta_counts, here("Data","GLV_SimData", "Dataset_2","GLV_N100.csv"))
+write.csv(Long_data_new, here("Data","GLV_SimData", "Dataset_2","GLV_Cov_N100.csv"))
+write.csv(zero_data1, here("Data","GLV_SimData", "Dataset_2","GLV_CovZero_N100.csv"))
+```
+
+
+
+
+
+
+
+
+
+
+

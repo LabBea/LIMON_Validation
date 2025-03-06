@@ -1,0 +1,2129 @@
+---
+title: "Dataset 5 - Sensitivity of Covariate strength"
+output: html_notebook
+---
+
+Here test the strength of recovery of edges of the networks for Covariate strength
+
+
+Here test the strength of recovery of edges of the networks on covariate inflated data passed to LIMON and passed to SPIEC-EASI. These will be compared to non-covariate inflated data passed to SPIEC-EASI. We utilize the LIMON SPIEC-EASI functions to iteratively generate the networks for covariate data passed to SPIEC-EASI, but bypass the linear mixed effect model distribution fitting step of LIMON. This is repeated 5 times for increase covariate strength of 0.01, 0.1, 1.0, 8.0. 15.0
+
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+```
+
+## 1.2 - Functions
+
+This function will be used to define which edges are consistent across different networks
+```{r}
+edge_recovery <- function(data) {
+  data <- data %>%
+    mutate(
+      Recovery = case_when(
+        !is.na(L_Edge_weight) & !is.na(O_Edge_weight) & !is.na(Cov_Edge_weight) &
+          (L_Edge_weight != 0 & O_Edge_weight != 0 & Cov_Edge_weight != 0) ~ 3,
+        !is.na(O_Edge_weight) & !is.na(Cov_Edge_weight) &
+          (O_Edge_weight != 0 & Cov_Edge_weight != 0) ~ 2,
+        !is.na(L_Edge_weight) & !is.na(O_Edge_weight) &
+          (L_Edge_weight != 0 & O_Edge_weight != 0) ~ 1,
+        TRUE ~ 0
+      )
+    )
+  
+  data
+}
+```
+
+
+
+# 2. Model Testing
+***
+
+
+## 2.1 - Covariate Strength = 0.01
+
+### 2.1.1 - LIMON on Covariate Inflated Data
+Run the LIMON covariate correction and network inference steps on Covariate inflated data. These edges will be required as L_Edges  
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_0.01.csv"))
+
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+
+
+```
+
+
+
+
+
+Networks of LIMON Data
+```{r}
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+
+### 2.1.2 - True Networks - no Covariates  
+
+SPIEC-EASI Networks of the Raw Data without covariates. These will be labeled as O_Edges (for original edges). We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the timepoints but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_0.01.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+```
+
+
+### 2.1.3 - SPIEC-EASI on Covariate Data  
+Similar to process for original networks, except now we will run it on covariate conflated data. These will be labeled as Cov_Edges
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_0.01.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+### 2.1.4 - Merge Outcomes
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+L_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("L_Edge_weight"="Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  L_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+L_Edges <- bind_rows(L_Edges_List)
+
+# Original Data + Cov - Extract edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+Cov_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim5[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("Cov_Edge_weight"="Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  Cov_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+Cov_Edges <- bind_rows(Cov_Edges_List)
+
+# Original Data - Extract Edges
+################################################################################
+# Initialize an empty list to store the data frames
+O_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("O_Edge_weight"="Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  O_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+O_Edges <- bind_rows(O_Edges_List)
+
+# Bind data together
+################################################################################
+Merged_T1 <- merge(L_Edges, O_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+
+
+# Comparison Graph Data
+################################################################################
+
+# Identify true edges
+Merged_T10 <- Merged_T1 %>%
+  edge_recovery() 
+
+# Add CovariateStrength 
+Merged_T10$CovariateStrength <- 0.010
+```
+
+
+
+
+
+## 2.2 - Covariate Strength = 0.10
+
+### 2.2.1 - LIMON on Covariate Inflated Data
+Run the LIMON covariate correction and network inference steps on Covariate inflated data. These edges will be required as L_Edges  
+
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_0.10.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+
+```
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+### 2.2.2 - True Networks - no Covariates  
+
+SPIEC-EASI Networks of the Raw Data without covariates. These will be labeled as O_Edges (for original edges). We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the timepoints but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_0.10.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+### 2.2.3 - SPIEC-EASI on Covariate Data  
+Similar to process for original networks, except now we will run it on covariate conflated data. These will be labeled as Cov_Edges
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_0.10.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+### 2.2.4 - Merge Outcomes
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+L_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("L_Edge_weight" = "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  L_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+L_Edges <- bind_rows(L_Edges_List)
+
+
+# Original Data + Cov - Extract edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+Cov_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim5[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("Cov_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  Cov_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+Cov_Edges <- bind_rows(Cov_Edges_List)
+
+# Original Data - Extract Edges
+################################################################################
+# Initialize an empty list to store the data frames
+O_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("O_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  O_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+O_Edges <- bind_rows(O_Edges_List)
+
+
+# Bind data together
+################################################################################
+Merged_T1 <- merge(L_Edges, O_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+
+
+# Comparison Graph Data
+################################################################################
+
+# Identify true edges
+Merged_T20 <- Merged_T1 %>%
+  edge_recovery() 
+
+# Add CovariateStrength 
+Merged_T20$CovariateStrength <- 0.10
+```
+
+
+
+
+## 2.3 - Subjects N=50
+
+### 2.3.1 - LIMON on Covariate Inflated Data
+Run the LIMON covariate correction and network inference steps on Covariate inflated data. These edges will be required as L_Edges  
+
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_1.0.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+```
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+### 2.3.2 - True Networks - no Covariates  
+
+SPIEC-EASI Networks of the Raw Data without covariates. These will be labeled as O_Edges (for original edges). We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the time points but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_1.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+
+### 2.3.3 - SPIEC-EASI on Covariate Data  
+Similar to process for original networks, except now we will run it on covariate conflated data. These will be labeled as Cov_Edges
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_1.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+### 2.3.4 - Merge Outcomes
+
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+L_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("L_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  L_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+L_Edges <- bind_rows(L_Edges_List)
+
+
+# Original Data + Cov - Extract edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+Cov_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim5[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("Cov_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  Cov_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+Cov_Edges <- bind_rows(Cov_Edges_List)
+
+# Original Data - Extract Edges
+################################################################################
+# Initialize an empty list to store the data frames
+O_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("O_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  O_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+O_Edges <- bind_rows(O_Edges_List)
+
+# Bind data together
+################################################################################
+Merged_T1 <- merge(L_Edges, O_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+
+
+# Comparison Graph Data
+################################################################################
+
+# Identify true edges
+Merged_T50 <- Merged_T1 %>%
+  edge_recovery() 
+
+# Add CovariateStrength 
+Merged_T50$CovariateStrength <- 1.0
+```
+
+
+
+## 2.4 - Covariate Strength = 8.0
+
+### 2.4.1 - LIMON on Covariate Inflated Data
+Run the LIMON covariate correction and network inference steps on Covariate inflated data. These edges will be required as L_Edges  
+
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_8.0.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+```
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+### 2.4.2 - True Networks - no Covariates  
+
+SPIEC-EASI Networks of the Raw Data without covariates. These will be labeled as O_Edges (for original edges). We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the timepoints but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_8.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+
+### 2.4.3 - SPIEC-EASI on Covariate Data  
+Similar to process for original networks, except now we will run it on covariate conflated data. These will be labeled as Cov_Edges
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_8.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+### 2.4.4 - Merge Outcomes
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+L_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("L_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  L_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+L_Edges <- bind_rows(L_Edges_List)
+
+# Original Data + Cov - Extract edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+Cov_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim5[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("Cov_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  Cov_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+Cov_Edges <- bind_rows(Cov_Edges_List)
+
+# Original Data - Extract Edges
+################################################################################
+# Initialize an empty list to store the data frames
+O_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("O_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  O_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+O_Edges <- bind_rows(O_Edges_List)
+
+# Bind data together
+################################################################################
+Merged_T1 <- merge(L_Edges, O_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+
+
+# Comparison Graph Data
+################################################################################
+
+# Identify true edges
+Merged_T75 <- Merged_T1 %>%
+  edge_recovery() 
+
+# Add CovariateStrength 
+Merged_T75$CovariateStrength <- 8.0
+```
+
+
+
+## 2.5 - Covariate Strength = 15.0
+
+### 2.5.1 - LIMON on Covariate Inflated Data
+Run the LIMON covariate correction and network inference steps on Covariate inflated data. These edges will be required as L_Edges  
+
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_15.0.csv"))
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+```
+
+
+
+
+Networks of LIMON Data
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# SPIEC-EASI per time
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, 
+                                       vertex.label.color = "black")
+```
+
+
+### 2.5.2 - True Networks - no Covariates  
+
+SPIEC-EASI Networks of the Raw Data without covariates. These will be labeled as O_Edges (for original edges). We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the timepoints but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_15.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+
+### 2.5.3 - SPIEC-EASI on Covariate Data  
+Similar to process for original networks, except now we will run it on covariate conflated data. These will be labeled as Cov_Edges
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_Cov_15.0.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+
+
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim5 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.0002, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+
+
+```
+
+
+### 2.5.4 - Merge Outcomes
+Calculate the similar edges across the three data types
+```{r}
+# LIMON Data - Extract Edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+L_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("L_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  L_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+L_Edges <- bind_rows(L_Edges_List)
+
+# Original Data + Cov - Extract edges
+################################################################################
+
+# Initialize an empty list to store the data frames
+Cov_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim5[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("Cov_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  Cov_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+Cov_Edges <- bind_rows(Cov_Edges_List)
+
+# Original Data - Extract Edges
+################################################################################
+# Initialize an empty list to store the data frames
+O_Edges_List <- list()
+
+# Loop through the edge tables and process each one
+for (i in 1:10) {
+  edge_table <- as.data.frame(L_obj_sim4[["Edge_Table"]][[paste0("Edge_Table_", i)]])
+  # Check if the edge table is empty
+  if (nrow(edge_table) == 0) {
+    # Create a data frame with NA values
+    edge_table <- data.frame(Edge_weight = NA, Time = i)
+  } else {
+    # Rename the column and add the Time column
+    edge_table <- edge_table %>% dplyr::rename("O_Edge_weight"= "Edge_weight")
+    edge_table$Time <- i
+  }
+  # Append the processed table to the list
+  O_Edges_List[[i]] <- edge_table
+}
+# Combine all the processed tables into a single data frame
+O_Edges <- bind_rows(O_Edges_List)
+
+# Bind data together
+################################################################################
+Merged_T1 <- merge(L_Edges, O_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+Merged_T1 <- merge(Merged_T1, Cov_Edges, by.y = c("Source", "Sink", "Time"), all=TRUE)
+
+
+# Comparison Graph Data
+################################################################################
+
+# Identify true edges
+Merged_T100 <- Merged_T1 %>%
+  edge_recovery() 
+
+# Add CovariateStrength 
+Merged_T100$CovariateStrength <- 15.0
+```
+
+
+# 3 - Summary of Sensitivty Analysis
+***
+Merge data for the following graphical analysis
+```{r}
+# Drop Source and Sink column and combine together
+#################################################################
+Merged_T1b <- Merged_T10 %>% dplyr::select(-Source, -Sink)
+Merged_T20b <- Merged_T20 %>% dplyr::select(-Source, -Sink)
+Merged_T50b <- Merged_T50 %>% dplyr::select(-Source, -Sink)
+Merged_T75b <- Merged_T75 %>% dplyr::select(-Source, -Sink)
+Merged_T100b <- Merged_T100 %>% dplyr::select(-Source, -Sink)
+
+# Merge together
+#################################################################
+# Data for Graphs 1 and 2
+Subject_sens_data_full <- rbind(Merged_T1b, Merged_T20b, Merged_T50b, Merged_T75b, Merged_T100b)
+
+# Data for Graph 3
+#Merged_T100c <- Merged_T100 %>% dplyr::select(-Edge_weight)
+Merged_T10c <- Merged_T10[,c("Source","Sink","Time","L_Edge_weight",
+                            "O_Edge_weight","Cov_Edge_weight","Recovery","CovariateStrength")]
+Subject_sens_data_taxa <- rbind(Merged_T10c, Merged_T20, Merged_T50, Merged_T75, Merged_T100)
+```
+
+
+Option to write and read in the above files
+```{r}
+#write.csv(Subject_sens_data_full, here("Output", "Dataset_5", "Subject_sens_data_full.csv"))
+#write.csv(Subject_sens_data_taxa, here("Output", "Dataset_5","Subject_sens_data_taxa.csv"))
+Subject_sens_data_full <- read.csv(here("Output", "Dataset_5", "Subject_sens_data_full.csv"))
+Subject_sens_data_taxa <- read.csv(here("Output","Dataset_5", "Subject_sens_data_taxa.csv"))
+```
+
+
+
+
+## 3.1 Graph Percent True Edges
+
+Find the Percent True Edges Recovered per sample size per time point
+
+
+### 3.1.1 - Data Formatting
+
+```{r}
+# Loop through all timepoints
+##########################################################
+all_timepoints <- list()
+
+for (time in 1:10) {
+  # Filter data for the current Sample Size
+  Subject_sens_data <- Subject_sens_data_full %>% filter(Time == time)
+  
+  # Countthe total True_Edges for that Sample Size
+  ##########################################################
+  
+  Subject_sens_data2 <- Subject_sens_data %>%
+    group_by(CovariateStrength) %>%
+    summarise(True_Edges = sum(O_Edge_weight != 0, na.rm = TRUE)) %>%
+    ungroup()
+  
+  # Merge the summarized data back with the original data
+  Subject_sens_data <- merge(Subject_sens_data, Subject_sens_data2, by="CovariateStrength", all=TRUE)
+  
+  # Find the Percent True Edges Data
+  ##########################################################
+  
+  # count the number of edges
+  Percent_true <- Subject_sens_data  %>%
+    group_by(CovariateStrength, Recovery, True_Edges) %>%
+    summarise(Count = n()) %>%
+    ungroup() %>%
+    filter(Recovery != 0)
+  
+  # Add the number of edges in all three data types to the LIMON vs Raw Speic-Easi counts
+  Percent_true <- Percent_true %>%
+    group_by(CovariateStrength, True_Edges) %>%
+    mutate(
+      Count_3 = ifelse(Recovery == 3, Count, 0),
+      Count = ifelse(Recovery == 1 | Recovery == 2, Count + sum(Count_3), Count)
+    ) %>%
+    dplyr::select(-Count_3)
+  
+  # Create a dataframe with all combinations of CovariateStrength and Recovery
+  combinations <- expand.grid(CovariateStrength = unique(Percent_true$CovariateStrength), Recovery = c(1, 2, 3))
+  Percent_true <- merge(Percent_true, combinations, by=c("CovariateStrength", "Recovery"), all=TRUE)
+  
+  # Fill and replace missing values
+  Percent_true <- Percent_true %>%
+    group_by(CovariateStrength) %>%
+    fill(True_Edges, .direction = "downup") %>%
+    mutate(
+      Count = ifelse(is.na(Count), Count[Recovery == 3][1], ifelse(is.na(Count), 0, Count))
+    ) %>%
+    ungroup() %>%
+    replace_na(list(Count = 0)) %>% 
+    mutate(DataType = case_when(
+      Recovery == 1 ~ "LIMON",
+      Recovery == 2 ~ "SPIEC-EASI",
+      Recovery == 3 ~ "Both"
+    ))
+  
+  # Calculate the Percentage of edges
+  Percent_true$Percent_true <- Percent_true$Count / Percent_true$True_Edges
+  Percent_true$Time <- time
+  
+  # Store the result in the list
+  all_timepoints[[time]] <- Percent_true
+}
+
+# Combine all timepoints together
+Percent_true <- do.call(rbind, all_timepoints)
+
+# Filter the combined data
+Percent_true <- Percent_true %>% filter(DataType != "Both")
+```
+
+
+
+
+### 3.1.2 - Statistics
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Percent_true$Percent_true)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Percent_true$Percent_true, breaks=100, 
+     main = "Distribution of Percent True", 
+     xlab = "Percent True", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 0.4, y = 10, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+Data is not normally distributed so use wilcox rank sum test instead of t-test
+
+
+p-value label function
+```{r}
+# P-value labels
+p_value_sig <- function(p) {
+  if (is.na(p)) {
+    return(" ")
+  } else if (p < 0.001) {
+    return("***")
+  } else if (p < 0.01) {
+    return("**")
+  } else if (p < 0.05) {
+    return("*")
+  } else {
+    return(" ")
+  }
+}
+```
+
+
+Plot the findings
+```{r}
+
+# Step 1: Summary Statistics
+#################################################################
+
+# Perform a T-tests and make summary statistics for plotting
+Summary_data <- Percent_true %>%
+  group_by(CovariateStrength) %>%
+  do({
+    data = .
+    
+    # Check if the data for any group is constant
+    group_variances <- data %>%
+      group_by(DataType) %>%
+      summarise(var = var(Percent_true, na.rm = TRUE))  # Handle NAs in variance calculation
+    
+    if (any(is.na(group_variances$var)) || any(group_variances$var == 0)) {
+      # If data is constant or variance calculation resulted in NA, assign p-value as NA
+      p_value <- NA
+    } else {
+      # Perform t-test
+      wilcox <- exactRankTests::wilcox.exact(Percent_true ~ DataType, data = data)
+      p_value <- tidy(wilcox)$p.value
+    }
+    
+    summarise(data,
+      mean_percent_true_LIMON = mean(Percent_true[DataType == "LIMON"], na.rm = TRUE),
+      sd_percent_true_LIMON = sd(Percent_true[DataType == "LIMON"], na.rm = TRUE),
+      n_LIMON = sum(DataType == "LIMON", na.rm = TRUE),
+      mean_percent_true_SPIECEASI = mean(Percent_true[DataType == "SPIEC-EASI"], na.rm = TRUE),
+      sd_percent_true_SPIECEASI = sd(Percent_true[DataType == "SPIEC-EASI"], na.rm = TRUE),
+      n_SPIECEASI = sum(DataType == "SPIEC-EASI", na.rm = TRUE),
+      p.value = p_value
+    )
+  }) %>%
+  mutate(
+    se_percent_true_LIMON = sd_percent_true_LIMON / sqrt(n_LIMON),
+    se_percent_true_SPIECEASI = sd_percent_true_SPIECEASI / sqrt(n_SPIECEASI),
+    significance = sapply(p.value, p_value_sig)
+  )
+
+# Step 2: Make the plotting data
+#################################################################
+Summary_data_long <- Summary_data %>%
+  dplyr::select(CovariateStrength, starts_with("mean_percent_true"), starts_with("se_percent_true"), significance) %>%
+  pivot_longer(cols = starts_with("mean_percent_true"), names_to = "DataType", values_to = "mean_percent_true") %>%
+  mutate(DataType = ifelse(str_detect(DataType, "LIMON"), "LIMON", "SPIEC-EASI")) %>%
+  pivot_longer(cols = starts_with("se_percent_true"), names_to = "DataType_se", values_to = "se_percent_true") %>%
+  mutate(DataType_se = ifelse(str_detect(DataType_se, "LIMON"), "LIMON", "SPIEC-EASI")) %>%
+  filter(DataType == DataType_se) %>%
+  dplyr::select(-DataType_se)
+
+# Step 3: Final figure
+#################################################################
+ggplot(Summary_data_long, aes(x = CovariateStrength, y = mean_percent_true, color = DataType)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean_percent_true - se_percent_true, 
+                    ymax = mean_percent_true + se_percent_true), width = 0.1) +
+  geom_text(aes(label = significance, y = 0.9), size = 5, vjust = -0.5, 
+            check_overlap = TRUE, color = "black") + # p-value annotations
+  labs(x = "CovariateStrength", y = "Percent_true", color = "DataType") +
+  ylim(0, 1) + 
+  xlab("Covariate Strength") +
+  ylab("Percent Recovered Edges") +
+  scale_color_manual(name = "Network", values = c("LIMON" = "orange", "SPIEC-EASI" = "blue")) +
+  # Use log10 scale for x-axis
+  scale_x_log10(limits = c(0.01, 15.0), breaks = c(0.01, 0.1, 1.0, 8.0, 15.0)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 18, 
+                                   angle =45, hjust = 1),
+        axis.text.y = element_text(family = "arial",color = "black", size = 18),
+        axis.title.x = element_text(family = "arial",color = "black", size = 14),
+        axis.title.y = element_text(family = "arial",color = "black", size = 14))
+```
+
+
+```{r}
+ggplot(Summary_data_long, aes(x = CovariateStrength, y = mean_percent_true, color = DataType)) +
+  geom_line() +
+  geom_point() +
+  geom_errorbar(aes(ymin = mean_percent_true - se_percent_true, ymax = mean_percent_true + se_percent_true), width = 0.1) +
+  geom_text(aes(label = significance, y = 0.9), size = 5, vjust = -0.5, check_overlap = TRUE, color = "black") + # p-value annotations
+  labs(x = "CovariateStrength", y = "Percent_true", color = "DataType") +
+  ylim(0, 1) + 
+  xlab("Covariate Strength") +
+  ylab("Percent Recovered Edges") +
+  scale_color_manual(name = "Network", values = c("LIMON" = "orange", "SPIEC-EASI" = "blue")) +
+  
+  # Use log10 scale for x-axis
+  scale_x_log10(limits = c(0.01, 15.0), breaks = c(0.01, 0.1, 1.0, 8.0, 15.0)) +
+  
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 18, angle = 45, hjust = 1),
+        axis.text.y = element_text(family = "arial", color = "black", size = 18),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14))
+
+```
+
+
+
+## 3.2  Graph Total Edges
+
+### 3.2.1 - Data Formatting
+Make Data frame for Total Edges per data Type by Time point
+```{r}
+# Initialize an empty list to store results
+total_edges_list <- list()
+
+# Loop through each timepoint from 1 to 10
+for (time in 1:10) {
+  # Calculate Total Edges for the current timepoint
+  total_edges <- Subject_sens_data_full %>%
+    filter(Time == time) %>%
+    group_by(CovariateStrength) %>%
+    summarize(
+      Count_L_Edge_weight = sum(!is.na(L_Edge_weight)),
+      Count_O_Edge_weight = sum(!is.na(O_Edge_weight)),
+      Count_Cov_Edge_weight = sum(!is.na(Cov_Edge_weight))
+    ) %>%
+    pivot_longer(cols = starts_with("Count"), names_to = "Counts_Column_Name", values_to = "Count") %>%
+    mutate(DataType = case_when(
+      Counts_Column_Name == "Count_L_Edge_weight" ~ "LIMON",
+      Counts_Column_Name == "Count_O_Edge_weight" ~ "True",
+      Counts_Column_Name == "Count_Cov_Edge_weight" ~ "SPIEC-EASI"
+    ))
+  total_edges$Time <- time
+  
+  # Store the result in the list
+  total_edges_list[[time]] <- total_edges
+}
+
+# Combine all timepoints together
+Total_Edges <- do.call(rbind, total_edges_list)
+
+```
+
+
+### 3.2.2 - Statistics
+
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Total_Edges$Count)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Total_Edges$Count, breaks=100, 
+     main = "Total Edges", 
+     xlab = "Count of edges", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 100, y = 10, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+Data is not normally distributed, use Wilcox Rank sum isntead of T-test
+
+
+
+```{r}
+# Step 1: Summary Statistics
+#################################################################
+Summary_data <- Total_Edges %>%
+  group_by(CovariateStrength) %>%
+  summarise(
+    # LIMON
+    mean_edges_LIMON = mean(Count[DataType == "LIMON"], na.rm = TRUE),
+    sd_edges_LIMON = sd(Count[DataType == "LIMON"], na.rm = TRUE),
+    n_LIMON = sum(DataType == "LIMON", na.rm = TRUE),
+    
+    # SPIEC-EASI + COV
+    mean_edges_SPIECEASI = mean(Count[DataType == "SPIEC-EASI"], na.rm = TRUE),
+    sd_edges_SPIECEASI = sd(Count[DataType == "SPIEC-EASI"], na.rm = TRUE),
+    n_SPIECEASI = sum(DataType == "SPIEC-EASI", na.rm = TRUE),
+    
+    # SPIEC-EASI no COV
+    mean_edges_TRUE = mean(Count[DataType == "True"], na.rm = TRUE),
+    sd_edges_TRUE = sd(Count[DataType == "True"], na.rm = TRUE),
+    n_TRUE = sum(DataType == "True", na.rm = TRUE),
+    
+    # p-values
+    p_value_LIMON_TRUE = if (n_LIMON > 0 & n_TRUE > 0) 
+      tidy(exactRankTests::wilcox.exact(Count[DataType %in% c("LIMON", "True")] ~ 
+                                          DataType[DataType %in% c("LIMON", "True")], exact = FALSE))$p.value else NA,
+    p_value_LIMON_SPIECEASI = if (n_LIMON > 0 & n_SPIECEASI > 0) 
+      tidy(exactRankTests::wilcox.exact(Count[DataType %in% c("LIMON", "SPIEC-EASI")] ~ 
+                                          DataType[DataType %in% c("LIMON", "SPIEC-EASI")], 
+                       exact = FALSE))$p.value else NA,
+                       p_value_SPIECEASI_TRUE = if (n_SPIECEASI > 0 & n_TRUE > 0) 
+      tidy(exactRankTests::wilcox.exact(Count[DataType %in% c("SPIEC-EASI", "True")] ~ 
+                                          DataType[DataType %in% c("SPIEC-EASI", "True")], 
+                       exact = FALSE))$p.value else NA
+  ) %>%
+  mutate(
+    se_edges_LIMON = sd_edges_LIMON / sqrt(n_LIMON),
+    se_edges_SPIECEASI = sd_edges_SPIECEASI / sqrt(n_SPIECEASI),
+    se_edges_TRUE = sd_edges_TRUE / sqrt(n_TRUE),
+    significance_LIMON_TRUE = sapply(p_value_LIMON_TRUE, p_value_sig),
+    significance_LIMON_SPIECEASI = sapply(p_value_LIMON_SPIECEASI, p_value_sig),
+    significance_SPIECEASI_TRUE = sapply(p_value_SPIECEASI_TRUE, p_value_sig)
+  )
+
+# Step 2: Make the plotting data
+#################################################################
+Summary_data_long <- Summary_data %>%
+  dplyr::select(CovariateStrength, starts_with("mean_edges"), starts_with("se_edges"), starts_with("significance")) %>%
+  pivot_longer(cols = starts_with("mean_edges"), names_to = "DataType", values_to = "mean_edges") %>%
+  mutate(DataType = case_when(
+    str_detect(DataType, "LIMON") ~ "LIMON",
+    str_detect(DataType, "SPIECEASI") ~ "SPIEC-EASI",
+    str_detect(DataType, "TRUE") ~ "True"
+  )) %>%
+  pivot_longer(cols = starts_with("se_edges"), names_to = "DataType_se", values_to = "se_edges") %>%
+  mutate(DataType_se = case_when(
+    str_detect(DataType_se, "LIMON") ~ "LIMON",
+    str_detect(DataType_se, "SPIECEASI") ~ "SPIEC-EASI",
+    str_detect(DataType_se, "TRUE") ~ "True"
+  )) %>%
+  filter(DataType == DataType_se) %>%
+  dplyr::select(-DataType_se)
+
+# Add significance labels
+Summary_data_long <- Summary_data_long %>%
+  left_join(
+    Summary_data %>% dplyr::select(CovariateStrength, 
+                                   significance_LIMON_TRUE, 
+                                   significance_LIMON_SPIECEASI, 
+                                   significance_SPIECEASI_TRUE),
+    by = "CovariateStrength"
+  )
+```
+
+
+
+
+```{r}
+# Step 3: Final figure
+#################################################################
+ggplot(Summary_data_long, aes(x = CovariateStrength, y = mean_edges, color = DataType)) +
+  geom_line() +
+  geom_point() +
+  
+  # Add Error bars
+  geom_errorbar(aes(ymin = mean_edges - se_edges, 
+                    ymax = mean_edges + se_edges), width = 0.1) +
+  
+    # Add a legend to describe all the colors
+  scale_color_manual(name = "Network", 
+                     values = c("LIMON" = "orange", 
+                                "SPIEC-EASI" = "blue", 
+                                "True" = "grey"),
+                     labels = c("LIMON" = "LIMON", 
+                                "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                                "True" = "SPIEC-EASI - No Covariates")) +
+  
+  # Use ggnewscale to define a new color scale after the first one
+  ggnewscale::new_scale_color() +
+  
+  # Annotate LIMON vs TRUE significance level
+  geom_text(aes(label = significance_LIMON_TRUE.x, y = (mean_edges + se_edges + 5), 
+                color = factor("LIMON-True")), 
+            size = 4, vjust = -0.5, check_overlap = TRUE, 
+            data = Summary_data_long %>% filter(DataType == "LIMON")) + 
+  
+  # Annotate LIMON vs SPIEC-EASI significance level
+  geom_text(aes(label = significance_LIMON_SPIECEASI.x, y = (mean_edges + se_edges + 15), 
+                color = factor("LIMON-SPIECEASI")), 
+            size = 4, vjust = -0.5, check_overlap = TRUE, 
+            data = Summary_data_long %>% filter(DataType == "LIMON")) + 
+  
+  # Annotate SPIEC-EASI vs TRUE significance level
+  geom_text(aes(label = significance_SPIECEASI_TRUE.x, y = (mean_edges + se_edges + 8), 
+                color = factor("SPIECEASI-True")), 
+            size = 4, vjust = -0.5, check_overlap = TRUE, 
+            data = Summary_data_long %>% filter(DataType == "SPIEC-EASI")) + 
+  
+  # Add on labels and themes
+  labs(x = "Covariate Strength", y = "Total Network Edges") +
+  
+    # Use log10 scale for x-axis
+  scale_x_log10(limits = c(0.01, 15.0), breaks = c(0.01, 0.1, 1.0, 8, 15.0)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 18,
+                                   angle = 45, hjust = 1),
+        axis.text.y = element_text(family = "arial",color = "black", size = 18),
+        axis.title.x = element_text(family = "arial",color = "black", size = 14),
+        axis.title.y = element_text(family = "arial",color = "black", size = 14),
+        legend.text = element_text(size = 10),   # Increases legend text size
+        legend.title = element_text(size = 12)) +
+  
+  # Add a legend to describe all the colors
+  scale_color_manual(name = "Wilcoxon signficance", 
+                     values = c("LIMON-True" = "darkorange2", 
+                                "LIMON-SPIECEASI" = "black",
+                                "SPIECEASI-True" = "deepskyblue"),
+                     labels = c("LIMON-True" = "LIMON*No Cov", 
+                                "LIMON-SPIECEASI" = "LIMON*SPIECEASI",
+                                "SPIECEASI-True" = "SPIECEASI*No Cov"))
+```
+
+
+
+
+## 3.3  Strength of Recovered Edges
+
+
+### 3.3.1 - Data Formatting
+Read back in the raw data with no covariates, get the spearman correlation per time point (1,2,3,4,5) and per sample size level (10,20,50,75,100). We will then compare these strength of recovered edges to the edges recovered by our various tests above. 
+```{r}
+Raw10 <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_0.01.csv")) %>% 
+                                          column_to_rownames("X") %>% 
+                                          dplyr::select(-c(Time, ID, Sex, BMI, Age))
+Raw20 <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_0.10.csv")) %>% 
+                                          column_to_rownames("X") %>% 
+                                          dplyr::select(-c(Time, ID, Sex, BMI, Age))
+Raw50 <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_1.0.csv")) %>% 
+                                          column_to_rownames("X") %>% 
+                                          dplyr::select(-c(Time, ID, Sex, BMI, Age))
+Raw75 <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_8.0.csv")) %>% 
+                                          column_to_rownames("X") %>% 
+                                          dplyr::select(-c(Time, ID, Sex, BMI, Age))
+Raw100 <- read.csv(here("Data", "GLV_SimData", "Dataset_5","GLV_15.0.csv")) %>% 
+                                          column_to_rownames("X") %>% 
+                                          dplyr::select(-c(Time, ID, Sex, BMI, Age))
+```
+
+
+
+```{r}
+# Define sample sizes and corresponding data frames
+sample_sizes <- c(0.01,0.1,1.0,8.0,15.0)
+data_frames <- list(Raw10, Raw20, Raw50, Raw75, Raw100)
+
+# Initialize an empty list to store results for each sample size
+cov_results <- list()
+
+for (i in seq_along(sample_sizes)) {
+  df <- data_frames[[i]]
+  sample_size <- sample_sizes[i]
+  
+  df$Subject <- sub("_Time[0-9]+", "", rownames(df))
+  df$Timepoint <- sub("Sbj[0-9]+_", "", rownames(df))
+  df$Timepoint <- gsub("Time", "", df$Timepoint)
+  
+  # List of unique timepoints
+  timepoints <- unique(df$Timepoint)
+  
+  # Initialize an empty data frame to store results
+  result_df <- data.frame(Source = character(),
+                          Sink = character(),
+                          Covariance = numeric(),
+                          Timepoint = character(),
+                          stringsAsFactors = FALSE)
+  
+  # Loop through each timepoint
+  for (time in timepoints) {
+    # Subset data for the current timepoint
+    df_time <- df %>% filter(Timepoint == time) %>% dplyr::select(-Subject, -Timepoint)
+    
+    # Calculate covariance matrix for the current timepoint
+    cov_matrix <- cor(df_time, method = "spearman")
+    
+    # Convert the covariance matrix to a long format
+    cov_long <- as.data.frame(as.table(cov_matrix))
+    
+    # Rename columns for clarity
+    names(cov_long) <- c("Sink", "Source",  "Covariance")
+    
+    # Add timepoint information
+    cov_long$Timepoint <- time
+    
+    # Combine with the result data frame
+    result_df <- bind_rows(result_df, cov_long)
+  }
+  
+  # Add sample size information
+  result_df <- result_df %>% dplyr::rename("Time" ="Timepoint")
+  result_df$CovariateStrength <- sample_size
+  
+  # Store in the list
+  cov_results[[i]] <- result_df
+}
+
+# Merge all results into one data frame
+True_cov <- do.call(rbind, cov_results)
+```
+
+
+Merge together and add annotaiton for strength of edges detected  
+- the x axis will be a range from the "Covariance" column with edges between  -1 - -0.5, -0.5 - -0.1, -0.1 - 0.1, 0.1 -0.5, 0.5 - 1.  
+- the y axis will be what percentage of the edges detected for that network/method fall into each of these categories
+```{r}
+# Merge with my data
+Strength_data <- merge(True_cov, Subject_sens_data_taxa, by.y = c("Source", "Sink", "Time", "CovariateStrength"), all = TRUE)
+
+# Add in columns based on what strength of association it detected
+Strength_data <- Strength_data %>% 
+  # for LIMON recovery
+  mutate(LIMON_strength = case_when(
+    !is.na(L_Edge_weight) & Covariance >= -1 & Covariance < -0.5 ~ "-1 - -0.5",
+    !is.na(L_Edge_weight) & Covariance >= -0.5 & Covariance < -0.1 ~ "-0.5 - -0.1",
+    !is.na(L_Edge_weight) & Covariance >= -0.1 & Covariance < 0.1 ~ "-0.1 - 0.1",
+    !is.na(L_Edge_weight) & Covariance >= 0.1 & Covariance < 0.5 ~ "0.1 - 0.5",
+    !is.na(L_Edge_weight) & Covariance >= 0.5 & Covariance <= 1 ~ "0.5 - 1",
+    TRUE ~ as.character(NA)  
+  )) %>% 
+  # for SPIEC-EASI recovery
+  mutate(SPIECEASI_strength = case_when(
+    !is.na(Cov_Edge_weight) & Covariance >= -1 & Covariance < -0.5 ~ "-1 - -0.5",
+    !is.na(Cov_Edge_weight) & Covariance >= -0.5 & Covariance < -0.1 ~ "-0.5 - -0.1",
+    !is.na(Cov_Edge_weight) & Covariance >= -0.1 & Covariance < 0.1 ~ "-0.1 - 0.1",
+    !is.na(Cov_Edge_weight) & Covariance >= 0.1 & Covariance < 0.5 ~ "0.1 - 0.5",
+    !is.na(Cov_Edge_weight) & Covariance >= 0.5 & Covariance <= 1 ~ "0.5 - 1",
+    TRUE ~ as.character(NA)  
+  ))
+
+# Split into True Positives Dataset and False Positives Datasets
+True_pos_raw <- Strength_data %>% filter(!is.na(O_Edge_weight)) %>%
+                                  filter(!(is.na(L_Edge_weight) & is.na(Cov_Edge_weight)))
+False_pos_raw <- Strength_data %>% filter(is.na(O_Edge_weight)) %>%
+                                  filter(!(is.na(L_Edge_weight) & is.na(Cov_Edge_weight)))
+
+```
+
+
+### 3.3.2 - Statistics
+
+
+True Positives
+```{r}
+# Step 1 turn to long format
+###############################################################
+long_data <- True_pos_raw %>%
+  pivot_longer(cols = c("LIMON_strength", "SPIECEASI_strength"),
+               names_to = "Network",
+               values_to = "Weight",
+               values_drop_na = TRUE) %>%
+  mutate(Network = case_when(
+    Network == "LIMON_strength" ~ "LIMON", 
+    Network == "SPIECEASI_strength" ~ "SPIECEASI")) 
+
+
+# Step 2: Find total networks per Network type and sample size
+####################################################################
+summary_data <- long_data %>%
+  group_by(Network, CovariateStrength) %>%
+  mutate(Total_edge = sum(!is.na(Weight)))
+
+# Step 3: Turn to percentages averaging by time to plot
+####################################################################
+summary_data2 <- summary_data %>%
+  group_by(Network, CovariateStrength) %>%
+  mutate(total_count = n()) %>%
+  group_by(Network, CovariateStrength, Weight) %>%
+  summarize(count = n(),
+            mean_percentage = (count / dplyr::first(total_count)), 
+            .groups = 'drop')
+
+
+# Step 4: Plot
+####################################################################
+# Stacked + percent
+ggplot(summary_data2, aes(fill = Weight, y = mean_percentage, x = factor(CovariateStrength))) +
+  geom_bar(position = position_dodge(width = 0.8), stat = "identity", width = 0.7) + 
+  facet_wrap(~ Network) + 
+  scale_fill_manual(name = "Edge Weight",
+                    values = c("-1 - -0.5" = "darkred",
+                               "-0.5 - -0.1" = "indianred1",
+                               "-0.1 - 0.1" = "moccasin",
+                               "0.1 - 0.5" = "lightblue",
+                               "0.5 - 1" = "darkblue"),
+                    breaks = c("-1 - -0.5",
+                               "-0.5 - -0.1",
+                               "-0.1 - 0.1",
+                               "0.1 - 0.5",
+                               "0.5 - 1",
+                               "NA")) +
+  # Add on labels and themes
+  labs(x = "Covariate Strength", y = "Percent True Positives") +
+  scale_x_discrete() +
+  theme_linedraw() +
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial",color = "black", size = 14),
+        axis.title.x = element_text(family = "arial",color = "black", size = 14),
+        axis.title.y = element_text(family = "arial",color = "black", size = 14),
+        strip.text = element_text(face = "bold", family = "arial", color = "white", size = 12))
+```
+
+
+
+False Positives
+```{r}
+# Step 1 turn to long format
+###############################################################
+long_data <- False_pos_raw %>%
+  pivot_longer(cols = c("LIMON_strength", "SPIECEASI_strength"),
+               names_to = "Network",
+               values_to = "Weight",
+               values_drop_na = TRUE) %>%
+  mutate(Network = case_when(
+    Network == "LIMON_strength" ~ "LIMON", 
+    Network == "SPIECEASI_strength" ~ "SPIECEASI")) 
+
+
+# Step 2: Find total networks per Network type and sample size
+####################################################################
+summary_data <- long_data %>%
+  group_by(Network, CovariateStrength) %>%
+  mutate(Total_edge = sum(!is.na(Weight)))
+
+# Step 3: Turn to percentages averaging by time to plot
+####################################################################
+summary_data2 <- summary_data %>%
+  group_by(Network, CovariateStrength) %>%
+  mutate(total_count = n()) %>%
+  group_by(Network, CovariateStrength, Weight) %>%
+  summarize(count = n(),
+            mean_percentage = (count / dplyr::first(total_count)), 
+            .groups = 'drop')
+
+
+# Step 4: Plot
+####################################################################
+summary_data2$CovariateStrength <- factor(summary_data2$CovariateStrength)
+
+# Stacked + percent
+ggplot(summary_data2, aes(fill = Weight, y = mean_percentage, x = factor(CovariateStrength))) +
+  geom_bar(position = position_dodge(width = 0.8), stat = "identity", width = 0.7) + 
+  facet_wrap(~ Network) + 
+  scale_fill_manual(name = "Edge Weight",
+                    values = c("-1 - -0.5" = "darkred",
+                               "-0.5 - -0.1" = "indianred1",
+                               "-0.1 - 0.1" = "moccasin",
+                               "0.1 - 0.5" = "lightblue",
+                               "0.5 - 1" = "darkblue"),
+                    breaks = c("-1 - -0.5",
+                               "-0.5 - -0.1",
+                               "-0.1 - 0.1",
+                               "0.1 - 0.5",
+                               "0.5 - 1",
+                               "NA")) +
+  # Add on labels and themes
+  labs(x = "Covariate Strength", y = "Percent False Positives") +
+  scale_x_discrete() +
+  theme_linedraw() +
+  theme(axis.text.x = element_text(family = "arial",color = "black", size = 14),
+        axis.text.y = element_text(family = "arial",color = "black", size = 14),
+        axis.title.x = element_text(family = "arial",color = "black", size = 14),
+        axis.title.y = element_text(family = "arial",color = "black", size = 14),
+        strip.text = element_text(face = "bold", family = "arial", color = "white", size = 12))
+```
+
+
+
+
+# 4 - Notifications
+```{r}
+system("say Your Silly code finished!")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

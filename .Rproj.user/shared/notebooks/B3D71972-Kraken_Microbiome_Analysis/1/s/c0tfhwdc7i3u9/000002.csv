@@ -1,0 +1,13 @@
+"0","```r
+# Convert species_table2 to a matrix
+taxonomy_matrix <- as.matrix(species_table2[, c(\"Kingdom\", \"Phylum\", \"Class\", \"Order\", \"Family\", \"Genus\", \"Species\")])
+
+# Create the tax_table object
+tax_table_obj <- tax_table(taxonomy_matrix)
+
+# Now, create the phyloseq object with the taxonomy table
+physeq <- phyloseq(otu_table(Count_data_filt, taxa_are_rows = FALSE),
+                   sample_data(metadata2),
+                   tax_table_obj)
+saveRDS(physeq, here(\"Output\", \"Phyloseq_obj\", \"KTR_ps.rds\"))
+```"

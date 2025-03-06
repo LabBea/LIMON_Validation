@@ -1,0 +1,428 @@
+---
+title: "SE LIONESS Summary"
+output: html_notebook
+---
+
+This script will summarize the the analysis of LIONESS and SE using the SE simulated data, Dataset 2g
+
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(SpiecEasi)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+```
+
+
+# 2. Figure #1A
+
+## 2.1 Data Prep
+```{r}
+# 50 Subjects 50 Taxa
+######################################
+Edges_50sbj50taxa <- read.csv(here("Output", "SE_Lionness", "Edges_50sbj50taxa.csv"))
+Edges_50sbj50taxa$N_Subjects <- 50
+Edges_50sbj50taxa$N_Species <- 50
+Edges_50sbj50taxa$Subject_Alt <- "Sbj1"
+Edges_50sbj50taxa$Species_Alt <- "sp28"
+
+# Sort to top 10
+Edges_50sbj50taxa <- Edges_50sbj50taxa %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 10)
+
+# 100 Subjects 50 Taxa
+######################################
+Edges_100sbj <- read.csv(here("Output", "SE_Lionness", "Edges_100sbj.csv"))
+Edges_100sbj$N_Subjects <- 100
+Edges_100sbj$N_Species <- 50
+Edges_100sbj$Subject_Alt <- "Sbj1"
+Edges_100sbj$Species_Alt <- "sp28"
+
+# Sort to top 10
+Edges_100sbj <- Edges_100sbj %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 10)
+
+# 50 Subjects 100 Taxa
+######################################
+Edges_100sp <- read.csv(here("Output", "SE_Lionness", "Edges_100sp.csv"))
+Edges_100sp$N_Subjects <- 50
+Edges_100sp$N_Species <- 100
+Edges_100sp$Subject_Alt <- "Sbj1"
+Edges_100sp$Species_Alt <- "sp65"
+
+# Sort to top 10
+Edges_100sp <- Edges_100sp %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 10)
+
+# 100 Subjects 100 Taxa
+######################################
+Edges_100sp_100sbj <- read.csv(here("Output", "SE_Lionness", "Edges_100sbj100sp.csv"))
+Edges_100sp_100sbj$N_Subjects <- 100
+Edges_100sp_100sbj$N_Species <- 100
+Edges_100sp_100sbj$Subject_Alt <- "Sbj1"
+Edges_100sp_100sbj$Species_Alt <- "sp98"
+
+# Sort to top 10
+Edges_100sp_100sbj <- Edges_100sp_100sbj %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 10)
+```
+
+## 2.2 Plot the data
+```{r}
+# Merge Data
+All_data <- rbind(Edges_50sbj50taxa, Edges_100sbj, Edges_100sp,Edges_100sp_100sbj)
+
+# Add Plot Colors
+All_data <- All_data %>% 
+  mutate(Plot_Colors = case_when(
+    SampleID == Subject_Alt & Source == Species_Alt ~ "Altered Subject & Species",
+    SampleID == Subject_Alt & Sink == Species_Alt ~ "Altered Subject & Species",
+    SampleID != Subject_Alt & Source == Species_Alt ~ "Altered Species",
+    SampleID != Subject_Alt & Sink == Species_Alt ~ "Altered Species",
+    SampleID == Subject_Alt & Source != Species_Alt ~ "Altered Subject",
+    SampleID == Subject_Alt & Sink != Species_Alt ~ "Altered Subject",
+    TRUE ~ "Neither Altered"))
+
+# Make the Facet Plot
+
+ggplot(All_data, aes(x = reorder(paste(Source, Sink, sep="-"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = Plot_Colors)) +
+  geom_col(color = "black") +
+  facet_grid(N_Subjects ~ N_Species, scales = "free", space = "free_x", 
+             labeller = labeller(N_Subjects = label_value, N_Species = label_value)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Edge", y = "Absolute Edge Difference") +
+  scale_fill_manual(name = "Edge Type", 
+                     values = c("Altered Subject & Species" = "darkgreen", 
+                                "Altered Species" = "purple",
+                                "Altered Subject" = "orange",
+                                "Neither Altered" = "grey"))  +
+  theme(axis.text.x = element_text(family = "sans", color = "black", size = 10),
+        axis.text.y = element_text(family = "sans", color = "black", size = 14),
+        axis.title.x = element_text(family = "sans", color = "black", size = 14),
+        axis.title.y = element_text(family = "sans", color = "black", size = 14),
+        strip.text.x = element_text(family = "sans", color = "black", size = 14),
+        strip.text.y = element_text(family = "sans", color = "black", size = 14),
+        legend.position = "none")
+```
+
+
+# 3. Figure #1B
+
+## 3.1 Prep the data
+Get the index list from the simulation code
+```{r}
+N1 <- "Sbj21_Time2"
+N5 <- c("Sbj21_Time2","Sbj23_Time2","Sbj32_Time2",
+        "Sbj34_Time2","Sbj30_Time2")
+
+I3 <- data.frame(Index_Source = c("sp11", "sp30", "sp7"))
+#I3 <- data.frame(Index_Source = c("sp11", "sp30", "sp7"), 
+#                 Index_Sink = c("sp98", "sp65", "sp33"))
+
+I5 <- data.frame(Index_Source = c("sp11", "sp30", "sp7", "sp54", "sp67"))
+
+#I5 <- data.frame(Index_Source = c("sp11", "sp30", "sp7", "sp54", "sp67"), 
+#                 Index_Sink = c("sp98", "sp65", "sp33", "sp97", "sp88"))
+```
+
+
+
+
+1 or 5 Subjects, 3 Indices changed
+```{r}
+# N1 I3
+######################################################
+ShuffleEdges_N1_I3 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N1I3.csv"))
+
+ShuffleEdges_N1_I3 <- ShuffleEdges_N1_I3 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N1, "Altered", "Not-Altered"),
+        Species_Altered = if_else(
+          any(Source %in% I3$Index_Source | Sink %in% I3$Index_Source),
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N1_I3_filt <- ShuffleEdges_N1_I3 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+# N5 I3
+######################################################
+
+ShuffleEdges_N5_I3 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N5I3.csv"))
+
+ShuffleEdges_N5_I3 <- ShuffleEdges_N5_I3 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N5, "Altered", "Not-Altered"),
+        Species_Altered = if_else(
+          any(Source %in% I3$Index_Source | Sink %in% I3$Index_Source),
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N5_I3_filt <- ShuffleEdges_N5_I3 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+```
+
+
+
+1 or 5 Subjects, 5 Indices changed
+```{r}
+# N1 I5
+######################################################
+ShuffleEdges_N1_I5 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N1I5.csv"))
+
+
+ShuffleEdges_N1_I5 <- ShuffleEdges_N1_I5 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N1, "Altered", "Not-Altered"),
+        Species_Altered = if_else(
+          any(Source %in% I5$Index_Source | Sink %in% I5$Index_Source),
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N1_I5_filt <- ShuffleEdges_N1_I5 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+# N5 I5
+######################################################
+ShuffleEdges_N5_I5 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N5I5.csv"))
+
+
+
+ShuffleEdges_N5_I5 <- ShuffleEdges_N5_I5 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N5, "Altered", "Not-Altered"),
+        Species_Altered = if_else(
+          any(Source %in% I5$Index_Source | Sink %in% I5$Index_Source),
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N5_I5_filt <- ShuffleEdges_N5_I5 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+```
+
+
+## 3.2 Plot the data
+```{r}
+# Merge Data
+All_data <- rbind(ShuffleEdges_N1_I3_filt,ShuffleEdges_N5_I3_filt,
+                  ShuffleEdges_N1_I5_filt,ShuffleEdges_N5_I5_filt)
+
+# Add Plot Colors
+All_data <- All_data %>% 
+  mutate(Plot_Colors = case_when(
+    Altered_Subject == "Altered" & 
+    Species_Altered == "Altered" ~ "Altered Subject & Species",
+        Altered_Subject != "Altered" & 
+        Species_Altered == "Altered" ~ "Altered Species",
+      Altered_Subject == "Altered" & 
+      Species_Altered != "Altered" ~ "Altered Subject",
+    TRUE ~ "Neither Altered")) %>% 
+  rename("N" ="N_Subjects") %>% 
+  rename("I" ="N_Species")
+
+# Make the Facet Plot
+
+ggplot(All_data, aes(x = reorder(paste(Source, Sink, sep="-"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = Plot_Colors)) +
+  geom_col(color = "black") +
+  facet_grid(N_Subjects ~ N_Species, scales = "free", space = "free_x", 
+             labeller = labeller(N_Subjects = label_value, N_Species = label_value)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Edge", y = "Absolute Edge Difference") +
+  scale_fill_manual(name = "Edge Type", 
+                     values = c("Altered Subject & Species" = "darkgreen", 
+                                "Altered Species" = "purple",
+                                "Altered Subject" = "orange",
+                                "Neither Altered" = "grey"))  +
+  theme(axis.text.x = element_text(family = "sans", color = "black", size = 6),
+        axis.text.y = element_text(family = "sans", color = "black", size = 14),
+        axis.title.x = element_text(family = "sans", color = "black", size = 14),
+        axis.title.y = element_text(family = "sans", color = "black", size = 14),
+        strip.text.x = element_text(family = "sans", color = "black", size = 14),
+        strip.text.y = element_text(family = "sans", color = "black", size = 14),
+        legend.position = "none")
+```
+
+
+
+
+
+# 4. Figure #1C
+## 4.1 Prep the data
+Get the index list from the simulation code
+```{r}
+N1 <- "Sbj21_Time2"
+N5 <- c("Sbj21_Time2","Sbj23_Time2","Sbj32_Time2",
+        "Sbj34_Time2","Sbj30_Time2")
+
+
+I3_low <- data.frame(Index_Source = c("sp1", "sp3", "sp4"), 
+                 Index_Sink = c("sp2", "sp5", "sp6"))
+
+I5_low <- data.frame(Index_Source = c("sp1", "sp3", "sp4", "sp7", "sp9"), 
+                 Index_Sink = c("sp2", "sp5", "sp6", "sp8", "sp10"))
+```
+
+
+
+1 or 5 Subjects, 3 Indices changed
+```{r}
+# N1 I3_low
+######################################################
+ShuffleEdges_N1_I3 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N1I3_low.csv"))
+
+ShuffleEdges_N1_I3 <- ShuffleEdges_N1_I3 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N1, "Altered", "Not-Altered"),
+        Both_Altered_Taxa = if_else(
+          any(Source == I3_low$Index_Source & Sink == I3_low$Index_Sink), 
+          "Altered", "Not-Altered"),
+        One_Altered_Taxa = if_else(
+          any(Source %in% I3_low$Index_Source | Sink %in% I3_low$Index_Sink | 
+          Sink %in% I3_low$Index_Source | Source %in% I3_low$Index_Sink), 
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N1_I3_filt <- ShuffleEdges_N1_I3 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+# N5 I3_low
+######################################################
+
+ShuffleEdges_N5_I3 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N5I3_low.csv"))
+
+ShuffleEdges_N5_I3 <- ShuffleEdges_N5_I3 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N5, "Altered", "Not-Altered"),
+        Both_Altered_Taxa = if_else(
+          any(Source == I3_low$Index_Source & Sink == I3_low$Index_Sink), 
+          "Altered", "Not-Altered"),
+        One_Altered_Taxa = if_else(
+          any(Source %in% I3_low$Index_Source | Sink %in% I3_low$Index_Sink | 
+          Sink %in% I3_low$Index_Source | Source %in% I3_low$Index_Sink), 
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Sort to top 15
+ShuffleEdges_N5_I3_filt <- ShuffleEdges_N5_I3 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+```
+
+
+1 or 5 Subjects, 5 Indices changed
+```{r}
+# N1 I3_low
+######################################################
+ShuffleEdges_N1_I5 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N1I5_low.csv"))
+
+ShuffleEdges_N1_I5 <- ShuffleEdges_N1_I5 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N1, "Altered", "Not-Altered"),
+        Both_Altered_Taxa = if_else(
+          any(Source == I5_low$Index_Source & Sink == I5_low$Index_Sink), 
+          "Altered", "Not-Altered"),
+        One_Altered_Taxa = if_else(
+          any(Source %in% I5_low$Index_Source | Sink %in% I5_low$Index_Sink | 
+          Sink %in% I5_low$Index_Source | Source %in% I5_low$Index_Sink), 
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Filter to Edges Changed
+ShuffleEdges_N1_I5_filt <- ShuffleEdges_N1_I5 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+# N5 I3_low
+######################################################
+
+ShuffleEdges_N5_I5 <- read.csv(here("Output", "SE_Lionness", "ShuffleEdges_N5I5_low.csv"))
+
+ShuffleEdges_N5_I5 <- ShuffleEdges_N5_I5 %>%
+  rowwise() %>% 
+  mutate(Altered_Subject = if_else(SampleID %in% N5, "Altered", "Not-Altered"),
+        Both_Altered_Taxa = if_else(
+          any(Source == I5_low$Index_Source & Sink == I5_low$Index_Sink), 
+          "Altered", "Not-Altered"),
+        One_Altered_Taxa = if_else(
+          any(Source %in% I5_low$Index_Source | Sink %in% I5_low$Index_Sink | 
+          Sink %in% I5_low$Index_Source | Source %in% I5_low$Index_Sink), 
+          "Altered", "Not-Altered")) %>%
+  ungroup()
+
+# Sort to top 25
+ShuffleEdges_N5_I5_filt <- ShuffleEdges_N5_I5 %>%
+  arrange(desc(abs(Edge_diff))) %>% slice_head(n = 25)
+
+```
+
+
+```{r}
+# Merge the Data
+Shuffle_merged <- rbind(ShuffleEdges_N1_I3_filt, ShuffleEdges_N5_I3_filt,
+                        ShuffleEdges_N1_I5_filt, ShuffleEdges_N5_I5_filt)
+
+Shuffle_merged <- Shuffle_merged %>% 
+  mutate(Plot_Colors = case_when(
+    Altered_Subject == "Altered" & Both_Altered_Taxa == "Altered" 
+                                    ~ "Altered Subject & Species",
+    Altered_Subject == "Altered" & One_Altered_Taxa == "Not-Altered" 
+                                    ~ "Altered Subject",
+    Altered_Subject == "Not-Altered" & One_Altered_Taxa == "Altered" 
+                                    ~ "Altered Species",
+    TRUE ~ "Neither Altered")) %>%
+  mutate(I = case_when(I == "3" ~ 6,
+                       I == "5" ~ 10)) %>%
+  rename("N"="N_Subjects") %>%
+  rename("I"="N_Species")
+
+# Make the Facet Plot
+
+ggplot(Shuffle_merged, 
+       aes(x = reorder(paste(Source, Sink, sep="-"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = Plot_Colors)) +
+  geom_col(color = "black") +
+  facet_grid(N_Subjects ~ N_Species, scales = "free", space = "free_x", 
+             labeller = labeller(N_Subjects = label_value, N_Species = label_value)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Edge", y = "Absolute Edge Difference") +
+  scale_fill_manual(name = "Edge Type", 
+                     values = c("Altered Subject & Species" = "darkgreen", 
+                                "Altered Species" = "purple",
+                                "Altered Subject" = "orange",
+                                "Neither Altered" = "grey"))  +
+  theme(axis.text.x = element_text(family = "sans", color = "black", size = 8),
+        axis.text.y = element_text(family = "sans", color = "black", size = 14),
+        axis.title.x = element_text(family = "sans", color = "black", size = 14),
+        axis.title.y = element_text(family = "sans", color = "black", size = 14),
+        strip.text.x = element_text(family = "sans", color = "black", size = 14),
+        strip.text.y = element_text(family = "sans", color = "black", size = 14),
+        legend.position = "none")
+
+```
+
+
+
+

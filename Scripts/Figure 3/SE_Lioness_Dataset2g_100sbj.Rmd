@@ -1,0 +1,365 @@
+---
+title: "SE & LIONNESS - Dataset 2g 100/50"
+output: html_notebook
+---
+
+
+In this script, we will be testing how well SE does at recovering individual networks with LIONESS using Dataset 2g - 100 subjects, 50 taxa. 
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(SpiecEasi)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+```
+
+
+
+# 2. Data Prep
+
+Read in the data
+```{r}
+# Read in the raw data
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_2g",
+                               "SE_100sbj50taxa.csv"))
+original_data <- original_data %>% column_to_rownames("X") 
+counts_data <- original_data
+
+# Cor
+original_cor <- read.csv(here("Data", "GLV_SimData", "Dataset_2g",
+                               "Cor_100sbj50taxa.csv"))
+```
+
+
+
+Store the overall count table in a list that will be used downstream
+```{r}
+Dataset2g_Res <- list()
+Dataset2g_Res$Counts <- counts_data
+Dataset2g_Res$Cor <- original_cor
+```
+
+
+# 3. Individual changes
+
+Here we will run SE and Lionness for all the data. Then ID which edge is the strongest in the overall SE network, and change those taxa in one individuals counts. We will then go back and run their samples through lionness and see if it can detect the change
+
+## 3.1 - Group Network
+
+Run SE to get a network for all the data
+
+```{r}
+set.seed(12345)
+
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# Run the SpiecEasi function
+net_data <- spiec.easi(
+    data.matrix(counts_data),
+    method = "glasso",
+    sel.criterion = "bstars", 
+    lambda.min.ratio = 0.01,
+    nlambda = 200,
+    pulsar.select = TRUE,
+    pulsar.params = pseed,  
+    icov.select = "pulsar.select",
+    icov.select.params = "pulsar.params", 
+    lambda.log = TRUE   
+  )
+  
+
+# Store the results in Dataset1_Res
+Dataset2g_Res$SpeicEasi_Time <- net_data
+```
+
+## 3.2 - Unaltered Ind Networks
+
+Run LIONESS to get the individual networks of the unaltered  data
+```{r}
+# Prep the data
+################################################
+# List to store individual networks
+Ind_Nets_unaltered <- list()
+
+# Overall network
+net_all <- as.matrix(SpiecEasi::getOptCov(Dataset2g_Res[["SpeicEasi_Time"]]))
+
+
+# Individualized Networks
+################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Loop
+for (j in 1:nrow(counts_data)) {
+      samplename <- rownames(counts_data[j, ])
+      nsamples <- nrow(counts_data)
+      net_single <- spiec.easi(data.matrix(counts_data[-j,]),
+                                method = "glasso",
+                                sel.criterion = "bstars", 
+                                lambda.min.ratio = 0.01,
+                                nlambda = 200,
+                                pulsar.select = TRUE,
+                                pulsar.params = pseed,  
+                                icov.select = "pulsar.select",
+                                icov.select.params = "pulsar.params", 
+                                lambda.log = TRUE)
+      net_single_cov <- as.matrix(getOptCov(net_single))
+      net_name <- samplename
+      Ind_Nets_unaltered[[net_name]] <- nsamples * (net_all -
+                                                       net_single_cov) + net_single_cov
+      colnames(Ind_Nets_unaltered[[net_name]]) <- rownames(Ind_Nets_unaltered[[net_name]]) <- colnames(counts_data)
+    }
+
+# Store the results 
+Dataset2g_Res$Ind_Nets_unaltered <- Ind_Nets_unaltered
+```
+
+```{r}
+saveRDS(Dataset2g_Res, here("Dataset2g_Res100sbj.rds"))
+Dataset2g_Res <- readRDS(here("Dataset2g_Res100sbj.rds"))
+```
+
+
+## 3.3 - Find Edge
+Pick up a strong edge
+```{r}
+# Extract the Covariance Matrix
+net_single_cov <- as.matrix(getOptCov(Dataset2g_Res$SpeicEasi_Time))
+
+# Set Diagnols to 0
+diagonal_indices <- 1:nrow(net_single_cov)
+net_single_cov[cbind(diagonal_indices, diagonal_indices)] <- 0
+
+# Add species name
+colnames(net_single_cov) <- rownames(net_single_cov) <- colnames(counts_data)
+
+# Find the max value
+max(net_single_cov, na.rm = TRUE)
+which(net_single_cov == max(net_single_cov, na.rm = TRUE), arr.ind = TRUE)
+```
+
+
+
+
+## 3.4 - Change Values
+Based on these, set species 28 to 0 in subject one
+```{r}
+counts_altered <- counts_data
+counts_altered["Sbj1_Time2", 28] <- 0
+
+```
+
+
+## 3.5 - Individual Networks
+
+Get the overall network first
+```{r}
+set.seed(12345)
+
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# Run the SpiecEasi function
+net_data <- spiec.easi(
+    data.matrix(counts_altered),
+    method = "glasso",
+    sel.criterion = "bstars", 
+    lambda.min.ratio = 0.01,
+    nlambda = 200,
+    pulsar.select = TRUE,
+    pulsar.params = pseed,  
+    icov.select = "pulsar.select",
+    icov.select.params = "pulsar.params", 
+    lambda.log = TRUE   
+  )
+  
+
+# Store the results in Dataset1_Res
+Dataset2g_Res$SpeicEasi_Time_alt <- net_data
+```
+
+
+Run LIONESS to get the individual networks
+```{r}
+# Prep the data
+################################################
+# List to store individual networks
+Ind_Nets_alt <- list()
+
+# Combined Network
+net_all <- as.matrix(SpiecEasi::getOptCov(Dataset2g_Res[["SpeicEasi_Time_alt"]]))
+
+
+# Individualized Networks
+################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Loop
+for (j in 1:nrow(counts_altered)) {
+      samplename <- rownames(counts_altered[j, ])
+      nsamples <- nrow(counts_altered)
+      net_single <- spiec.easi(data.matrix(counts_altered[-j,]),
+                                method = "glasso",
+                                sel.criterion = "bstars", 
+                                lambda.min.ratio = 0.01,
+                                nlambda = 200,
+                                pulsar.select = TRUE,
+                                pulsar.params = pseed,  
+                                icov.select = "pulsar.select",
+                                icov.select.params = "pulsar.params", 
+                                lambda.log = TRUE)
+      net_single_cov <- as.matrix(getOptCov(net_single))
+      net_name <- samplename
+      Ind_Nets_alt[[net_name]] <- nsamples * (net_all -
+                                                       net_single_cov) + net_single_cov
+      colnames(Ind_Nets_alt[[net_name]]) <- rownames(Ind_Nets_alt[[net_name]]) <- colnames(counts_altered)
+    }
+
+# Store the results 
+Dataset2g_Res$Ind_Nets_alt <- Ind_Nets_alt
+```
+
+
+
+## 3.6 - Check Recovery
+
+## 3.6.1 Unaltered Edges
+```{r}
+# Create an empty edge list
+##########################################
+Ind_Edge_Unalt_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2g_Res[["Ind_Nets_unaltered"]])) {
+    cov_matrix <- Dataset2g_Res[["Ind_Nets_unaltered"]][[i]]
+    network_name <- names(Dataset2g_Res[["Ind_Nets_unaltered"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c("Source", "Sink", "Edge_weight")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_Unalt_Table[[edge_table_name]] <- adj
+  }
+Dataset2g_Res$Ind_Edge_Unalt_Table <- Ind_Edge_Unalt_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_Unalt_Table)
+
+# merge with edges
+##########################################
+Unaltered_edges <- Merged_Edge_Table
+
+```
+
+
+## 3.6.2 Altered Edges
+Convert altered networks to an edge list
+```{r}
+# Create an empty edge list
+##########################################
+Ind_Edge_altered_Table <- list()
+
+# loop through and extract edges
+##########################################
+for (i in seq_along(Dataset2g_Res[["Ind_Nets_alt"]])) {
+    cov_matrix <- Dataset2g_Res[["Ind_Nets_alt"]][[i]]
+    network_name <- names(Dataset2g_Res[["Ind_Nets_alt"]][i])
+    edge_table_name <- paste0(network_name)
+    diagonal_indices <- 1:nrow(cov_matrix)
+    cov_matrix[cbind(diagonal_indices, diagonal_indices)] <- 0
+    cov_matrix[lower.tri(cov_matrix)] <- 0
+    adj <- as.data.frame(as.table(cov_matrix))
+    colnames(adj) <- c("Source", "Sink", "Edge_weight")
+    adj <- adj[adj$Edge_weight != 0, ]
+    adj$SampleID <- network_name
+    Ind_Edge_altered_Table[[edge_table_name]] <- adj
+  }
+Dataset2g_Res$Ind_Edge_altered_Table <- Ind_Edge_altered_Table
+Merged_Edge_Table <- do.call(rbind, Ind_Edge_altered_Table)
+
+
+# merge with sample data
+##########################################
+Altered_data <- Merged_Edge_Table
+# rename Edge_weight to Altered_Edge_weight
+Altered_data <- Altered_data %>% rename("Edge_weight"="Altered_Edge_weight")
+```
+
+
+Combine the data
+```{r}
+# Combine the data
+#####################################
+Combined_data <- merge(Unaltered_edges, Altered_data, 
+                       by = c("SampleID", "Source", "Sink"))
+
+Combined_data$SampleID <- gsub("_Time2", "", Combined_data$SampleID)
+
+# create a difference column
+Combined_data$Edge_diff <- Combined_data$Edge_weight - Combined_data$Altered_Edge_weight
+
+#Sort by difference
+Combined_data_sortededge <- Combined_data %>%
+  arrange(desc(abs(Edge_diff)))
+
+```
+
+
+Plot these data
+```{r}
+# Filter to top 10 changed edges
+top_edges <- Combined_data_sortededge %>% slice_head(n = 10)
+
+# Plot
+ggplot(top_edges, aes(x = reorder(paste(Source, Sink, sep="-"), abs(Edge_diff)), 
+                      y = abs(Edge_diff), fill = SampleID)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_brewer(palette = "Spectral") +
+  labs(x = "Edge (Source - Sink)", y = "Absolute Edge Difference", 
+       title = "Top 10 Most Altered Edges") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(family = "sans", color = "black", size = 14),
+        axis.text.y = element_text(family = "sans", color = "black", size = 14),
+        axis.title.x = element_text(family = "sans", color = "black", size = 14),
+        axis.title.y = element_text(family = "sans", color = "black", size = 14))
+```
+
+
+
+
+Save the data
+```{r}
+saveRDS(Dataset2g_Res, here("Output", "SE_Lionness", "Dataset2g_Res_100sbj.rds"))
+
+write.csv(Combined_data_sortededge, here("Output", "SE_Lionness", "Edges_100sbj.csv"))
+```
+
+
+
+
+
+

@@ -1,0 +1,12 @@
+"0","```r
+# Counts
+Batch1_counts <- Batch1[[\"Filt_Counts\"]]
+
+Batch1_counts$Sample <- gsub(\"([A-Za-z0-9]+)([123])$\", \"\\1.\\2\", Batch1_counts$Sample)
+
+# Set Sample as row names
+Batch1_counts <- Batch1_counts %>% column_to_rownames(\"Sample\")
+
+
+
+```"

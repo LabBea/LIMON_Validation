@@ -1,0 +1,26 @@
+"0","```r
+# Summarize alignment data
+align_summary <- Batch2$BT2_Metrics %>%
+  summarise(
+    Total_UnfilteredRead = sum(UnfilteredRead, na.rm = TRUE),
+    Total_AlConFail = sum(AlConFail, na.rm = TRUE)
+  )
+
+# Reshape data for plotting
+plot_data <- align_summary %>%
+  pivot_longer(cols = everything(), names_to = \"Metric\", values_to = \"Count\")
+
+# Create the bar plot
+ggplot(plot_data, aes(x = Metric, y = Count, fill = Metric)) +
+  geom_bar(stat = \"identity\") +
+  labs(x = \"Read Metric\",
+       y = \"Read Count\") +
+  scale_fill_manual(values = c(\"Total_UnfilteredRead\" = \"blue\", \"Total_AlConFail\" = \"red\")) +
+  theme_minimal() +
+  labs(x = \"Read Type\", y = \"Read Count\", title = \"Batch 2\") +  
+  theme(axis.text.x = element_text(family = \"arial\",color = \"black\", size = 14),
+        axis.text.y = element_text(family = \"arial\",color = \"black\", size = 14),
+        axis.title.x = element_text(family = \"arial\",color = \"black\", size = 14),
+        axis.title.y = element_text(family = \"arial\",color = \"black\", size = 14),
+        strip.text = element_text(face = \"bold\", family = \"arial\", color = \"black\", size = 12))
+```"

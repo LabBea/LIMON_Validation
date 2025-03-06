@@ -1,0 +1,20 @@
+"0","```r
+# List all Kraken report files
+kraken_files <- list.files(
+  path = here(\"Data\", \"Microbiome_Data\", \"Kraken\", \"kreports\"),
+  full.names = TRUE,
+  pattern = \"\\.k2report$\"
+)
+
+# Extract names from filenames
+kraken_names <- sapply(basename(kraken_files), function(x) {
+  str_extract(x, \"(?<=-)[^-]+\")
+})
+
+# Read each file and store it in a named list
+Batch1$Kraken_reports <- setNames(
+  lapply(kraken_files, read_delim, delim = \"\t\"),
+  kraken_names
+)
+
+```"

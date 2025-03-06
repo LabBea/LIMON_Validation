@@ -1,0 +1,111 @@
+"0","```r
+library(here)
+```"
+"1","here() starts at /Users/bealab/Desktop/KTR_Pilot_Analysis
+"
+"0","```r
+library(tidyverse)
+```"
+"1","── Attaching core tidyverse packages ────────────────────────────────────────────────────────────────────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.4     ✔ readr     2.1.5
+✔ forcats   1.0.0     ✔ stringr   1.5.1
+✔ ggplot2   3.5.1     ✔ tibble    3.2.1
+✔ lubridate 1.9.3     ✔ tidyr     1.3.1
+✔ purrr     1.0.2     
+── Conflicts ──────────────────────────────────────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the ]8;;http://conflicted.r-lib.org/conflicted package]8;; to force all conflicts to become errors
+"
+"0","```r
+library(devtools)
+```"
+"1","Loading required package: usethis
+Registered S3 method overwritten by 'htmlwidgets':
+  method           from         
+  print.htmlwidget tools:rstudio
+"
+"0","```r
+library(ggpubr)
+library(readxl)
+library(finalfit)
+library(equatiomatic)
+library(lme4)
+```"
+"1","Loading required package: Matrix
+
+Attaching package: ‘Matrix’
+
+The following objects are masked from ‘package:tidyr’:
+
+    expand, pack, unpack
+"
+"0","```r
+library(finalfit)
+library(corrplot)
+```"
+"1","corrplot 0.95 loaded
+"
+"0","```r
+library(phyloseq)
+```"
+"1","Registered S3 method overwritten by 'data.table':
+  method           from
+  print.data.table     
+"
+"0","```r
+library(metagenomeSeq)
+```"
+"1","Loading required package: Biobase
+Loading required package: BiocGenerics
+
+Attaching package: ‘BiocGenerics’
+
+The following objects are masked from ‘package:lubridate’:
+
+    intersect, setdiff, union
+
+The following objects are masked from ‘package:dplyr’:
+
+    combine, intersect, setdiff, union
+
+The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind, colnames, dirname, do.call, duplicated, eval, evalq, Filter,
+    Find, get, grep, grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget, order, paste, pmax, pmax.int, pmin,
+    pmin.int, Position, rank, rbind, Reduce, rownames, sapply, setdiff, table, tapply, union, unique, unsplit, which.max,
+    which.min
+
+Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with 'browseVignettes()'. To cite Bioconductor, see 'citation(\"Biobase\")',
+    and for packages 'citation(\"pkgname\")'.
+
+
+Attaching package: ‘Biobase’
+
+The following object is masked from ‘package:phyloseq’:
+
+    sampleNames
+
+Loading required package: limma
+
+Attaching package: ‘limma’
+
+The following object is masked from ‘package:BiocGenerics’:
+
+    plotMA
+
+Loading required package: glmnet
+Loaded glmnet 4.1-8
+Loading required package: RColorBrewer
+"
+"0","```r
+#library(LIMON)
+library(purrr)
+library(readr)  # for read_tsv to handle .k2report files
+```"

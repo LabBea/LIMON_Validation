@@ -1,0 +1,484 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+library(parallel)
+library(graph)
+library(phyloseq)
+library(metagMisc)
+library(ggeffects)
+library(car)
+```
+
+
+
+# 2. Data
+*** 
+
+## 2.1 - Background
+In this script, we will be running the full LIMON pipeline on an infant dataset published in 2019. The data were pulled from this summarized article https://www.nature.com/articles/s41522-022-00345-5/figures/1, specifically reference the study by He et al 2019 
+
+
+He, Xuan, et al. "Fecal microbiome and metabolome of infants fed bovine MFGM supplemented formula or standard formula with breast-fed infants as reference: a randomized controlled trial." Scientific reports 9.1 (2019): 1-14.
+
+
+## 2.2 - Data set up
+
+Load the Metadata
+```{r}
+data("He_2019_metadata")
+```
+
+filter down and create some binarys
+```{r}
+metadata <- He_2019_metadata %>% 
+  dplyr::select(Subject, X, Study.Group, Age, Gender, diet) %>%
+  group_by(Subject) %>%
+  # Filter to those with at least three visits
+  filter(n() >= 4) %>%
+  ungroup() %>%
+  column_to_rownames("X") %>%
+  # add a binary column for Gender
+  mutate(Gender_binary = case_when(
+    Gender == "Male" ~ 1,
+    Gender == "Female" ~ 0)) %>%
+  # add a binary column for Diet (Formula or Breastmilk)
+  mutate(Diet_binary = case_when(diet == "Standard infant formula" ~ 0,
+                                 diet == "Experimental infant formula" ~ 0,
+                                 diet == "Breast milk" ~ 1))
+
+```
+
+
+
+Microbial Data
+```{r}
+# Microbial Counts
+############################################################
+data("He_2019_data")
+
+# Mutate column names to keep only the string after the last ";"
+colnames(He_2019_data) <- colnames(He_2019_data) %>% 
+  str_extract("([^;]+)$")
+colnames(He_2019_data) <- make.names(colnames(He_2019_data), unique = TRUE)
+He_2019_data <- He_2019_data %>% column_to_rownames("X")
+
+# Ensure no columns sum to 0
+raw_counts <- He_2019_data %>%
+  dplyr::select(where(~ sum(.) > 0))
+
+```
+
+```{r}
+# Look at the data
+hist(as.matrix(raw_counts), breaks = 100)
+```
+
+Check Mean and standard deviation of the data
+```{r}
+# Stats
+median(as.matrix(raw_counts))
+mean(as.matrix(raw_counts))
+sd(as.matrix(raw_counts))
+
+# Zeros
+percent_zeros <- sum(raw_counts== 0) / (nrow(raw_counts) * ncol(raw_counts)) * 100
+percent_zeros
+```
+75% of the data is 0's, and the standard deviation is >> then the mean so it follows a zero-inflated negative binomial distribution
+
+
+Check some of the features abundance by gender
+```{r}
+# Step 1 - Merge metadata with count table
+################################################
+common_samples <- intersect(rownames(raw_counts), rownames(metadata))
+raw_counts <- raw_counts[common_samples, ]
+metadata <- metadata[common_samples, ]
+
+# Merge
+counts_meta <- merge(metadata, as.matrix(raw_counts), by = 0, all=TRUE)
+counts_meta <- counts_meta %>% column_to_rownames("Row.names")
+
+# Step 2 - Mean Abundance by diet
+################################################
+mean_data <- counts_meta %>%
+  group_by(diet = counts_meta[[5]]) %>%
+  summarise(across(8:81, mean, na.rm = TRUE)) %>%
+  pivot_longer(-diet, names_to = "Variable", values_to = "Mean")
+
+# Plot the mean values by diet
+ggplot(mean_data, aes(x = Variable, y = Mean, fill = diet)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("darkviolet","steelblue", "darkgreen")) +
+  labs(x = "Genus", y = "Mean Abundance Count", title = "Mean Counts by Diet") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# Step 2 - Mean Abundance by gender
+################################################
+mean_data <- counts_meta %>%
+  group_by(Gender = counts_meta[[4]]) %>%
+  summarise(across(8:81, mean, na.rm = TRUE)) %>%
+  pivot_longer(-Gender, names_to = "Variable", values_to = "Mean")
+
+# Plot the mean values by gender
+ggplot(mean_data, aes(x = Variable, y = Mean, fill = as.factor(Gender))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("darkviolet","darkgreen")) +
+  labs(x = "Genus", y = "Mean Abundance Count", title = "Mean Counts by Gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+```
+
+
+
+CSS normalize the counts
+```{r}
+# Create the OTU table 
+otu_table <- otu_table(raw_counts, taxa_are_rows = FALSE)
+sample_data <- sample_data(metadata)
+
+# CSS norm in Phyloseq
+physeq <- phyloseq(otu_table, sample_data)
+ps.css <- phyloseq_transform_css(physeq, norm= TRUE, log = TRUE)
+
+normalized_counts <- round(as.data.frame(t(ps.css@otu_table)))
+```
+
+
+Check some of the features abundance by gender
+```{r}
+# Step 1 - Merge metadata with count table
+################################################
+common_samples <- intersect(rownames(normalized_counts), rownames(metadata))
+normalized_counts <- normalized_counts[common_samples, ]
+metadata <- metadata[common_samples, ]
+
+# Merge
+counts_meta <- merge(metadata, as.matrix(normalized_counts), by = 0, all=TRUE)
+counts_meta <- counts_meta %>% column_to_rownames("Row.names")
+
+# Step 2 - Mean Abundance by diet
+################################################
+mean_data <- counts_meta %>%
+  group_by(diet = counts_meta[[5]]) %>%
+  summarise(across(8:81, mean, na.rm = TRUE)) %>%
+  pivot_longer(-diet, names_to = "Variable", values_to = "Mean")
+
+# Plot the mean values by diet
+ggplot(mean_data, aes(x = Variable, y = Mean, fill = diet)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("darkviolet","steelblue", "darkgreen")) +
+  labs(x = "Genus", y = "Mean Abundance Count", title = "Mean Counts by Diet") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+# Step 2 - Mean Abundance by gender
+################################################
+mean_data <- counts_meta %>%
+  group_by(Gender = counts_meta[[4]]) %>%
+  summarise(across(8:81, mean, na.rm = TRUE)) %>%
+  pivot_longer(-Gender, names_to = "Variable", values_to = "Mean")
+
+# Plot the mean values by gender
+ggplot(mean_data, aes(x = Variable, y = Mean, fill = as.factor(Gender))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("darkviolet","darkgreen")) +
+  labs(x = "Genus", y = "Mean Abundance Count", title = "Mean Counts by Gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+```
+
+
+# 3. LIMON
+*** 
+
+```{r}
+# Ensure sample counts and metadata are in the same order
+common_samples <- intersect(rownames(normalized_counts), rownames(metadata))
+normalized_counts <- normalized_counts[common_samples, ]
+metadata <- metadata[common_samples, ]
+
+
+# Make LIMON object
+L_obj <- LIMON_Obj(Counts = as.matrix(normalized_counts), 
+                           SampleData = metadata)
+```
+
+
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#########################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Age", 
+                           Subject = "Subject", 
+                           Covariates = c("Gender_binary"),
+                           model = "Gender_binary",
+                           distribution = "GLMM.Z")
+
+```
+
+
+
+
+```{r}
+# Check the data cleaning
+################################################
+cleaned <- merge(metadata, L_obj2[["Corrected_Counts"]], by = 0)
+cleaned <- cleaned %>% column_to_rownames("Row.names")
+
+# Step 2 - Mean Abundance by gender
+################################################
+mean_data <- cleaned %>%
+  group_by(Gender = cleaned[[4]]) %>%
+  summarise(across(8:81, mean, na.rm = TRUE)) %>%
+  pivot_longer(-Gender, names_to = "Variable", values_to = "Mean")
+
+# Plot the mean values by gender
+ggplot(mean_data, aes(x = Variable, y = Mean, fill = as.factor(Gender))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("darkviolet","darkgreen")) +
+  labs(x = "Genus", y = "Mean Abundance Count", title = "Gender Corrected") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+Networks per timepoint
+```{r}
+set.seed(12345)
+# SPIEC-EASI per time
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+
+#infer network
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.02, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+```
+
+
+Individualized Networks
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+
+# individual Networks
+L_obj6 <- LIMON_IndNet(Obj = L_obj3, method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Save the object
+saveRDS(L_obj6, here("Output","He_2019", "HE2019_LIMON.rds"))
+```
+
+
+
+
+
+```{r}
+# option to read the object back in
+L_obj6 <- readRDS(here("Output","He_2019", "HE2019_LIMON.rds"))
+
+# Extract edges and centralities
+L_obj7<- LIMON_IndEdges(L_obj6, threshold = 0.02)
+L_obj8 <- LIMON_Centralities(L_obj7, threshold = 0.02)
+```
+
+
+
+
+LIMON will run a statistical model with per each unique interaction at each time point with that interactions edge weight as the predictor, and a user specified dependent variable as the outcome. The current model options are "lm" for a linear regression (for a continuous outcome variable), "logit" for a logistic regression (for a binary outcome variable only), and "multinom", multinomial model (for 3 or more categories). There is a minimum number of observations required for the different models to run; 10 for lm, 20 for logit, and 30 for multinom. If there are not enough observations for that interaction at that timepoint, a message will be returned to the user. 
+
+The defualt is to not filter the models by signficance. Users can set a p-value or adjusted p-value threshold to limit the number of models returned. This is also useful for printing the graphs from the linear and logistic models. Users can specify if they want to print a graph of all of their interactions returned fromt he model (plot_nodes = TRUE). This will not work for the multinomial model however, we will address how to visualize those data in a bit. 
+
+Our question of interst in this dataset is how do the different diets (standard formula; SF, experimental formula; EF, and breast milk; BF) alter microbial interactions across the first year of life (2,4,6,12 months). Lets first start by looking at the binary diet outcome we created, which was formula fed (SF or EF; 0) vs Breasf Fed (1). Run a logisitc model and print the graphs with a p-value threshold of 0.05 
+```{r}
+# Create a new object
+L_obj9 <- L_obj8
+
+
+L_obj9 <- LIMON_StatNodes(L_obj9, dependent = "Diet_binary", time = "Age", pval = 0.05,
+                           method ="logit", timepoints= NULL, plot_nodes = TRUE, 
+                           estimate = NULL, custom_colors = NULL, point_size = 5)
+```
+
+
+```{r}
+# Create a new object
+L_obj9 <- L_obj8
+
+
+L_obj9 <- LIMON_StatNodes(L_obj9, dependent = "diet", time = "Age", pval = 0.05,
+                           method ="multinom", timepoints= NULL, plot_nodes = FALSE, 
+                           estimate = NULL, custom_colors = NULL, point_size = 8)
+
+# Examine the Output
+nodes_data <- L_obj9[["Significant_Interactions"]]
+```
+
+
+g__Parabacteroides-g__Actinomyces time 6
+```{r}
+Edge_Table <- L_obj8[["Merged_Edge_Table"]]
+        
+# list to store all of the model data in
+node_results <- list()
+
+# Filter data to a timepoint of interest        
+edge_data_time_full <- Edge_Table %>% filter(Edge_Table[["Age"]] == 6)
+
+# Filter to an interaction of interest
+edge_data_time <- edge_data_time_full %>% filter(Interaction == "g__Parabacteroides-g__Actinomyces")
+dependent <- "diet"
+
+# Run the model
+formula <- as.formula(paste(dependent, "~Edge_weight"))
+set.seed(12345)
+model <- nnet::multinom(formula, data = edge_data_time, trace = FALSE)
+model_summary <- broom::tidy(model, conf.int = TRUE)
+model_summary$Interaction <- "g__Parabacteroides-g__Actinomyces"
+model_summary$Time_Level <- 6
+model_summary$Model_Type <- "Multinomial"
+model_summary$Model_SampleSize <- stats::nobs(model)
+node_results[[paste("g__Parabacteroides-g__Actinomyces", 6, sep = "_")]] <- model_summary
+
+
+# get probabilities
+set.seed(12345)
+predict(model, newdata = data.frame(Edge_weight = 2.5), type = 'probs')
+set.seed(12345)
+prob_effects <- ggeffect(model, terms = "Edge_weight[-2:2,by=0.5]")
+
+# Graph probabilities
+ggplot(prob_effects) +
+  aes(x = x, y = predicted, fill = response.level, color = response.level) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 1/2) +
+  labs(x = 'g__Parabacteroides-g__Actinomyces Edge Weight', y = 'Predicted Probability') +
+  ylim(c(0, 1)) +
+  theme_classic() +
+  scale_color_manual(
+    values = c("#bc80bd", "#ffed6f", "#ccebc5"), 
+    name = "Infant Diet",
+    labels = c("Breast Milk" = "Breast.milk", 
+               "Experimental infant formula" = "Experimental.infant.formula", 
+               "Standard infant formula" = "Standard.infant.formula") ) +
+  scale_fill_manual(
+    values = c("#bc80bd", "#ffed6f", "#ccebc5"), 
+    name = "Infant Diet",
+    labels = c("Breast Milk" = "Breast.milk", 
+               "Experimental infant formula" = "Experimental.infant.formula", 
+               "Standard infant formula" = "Standard.infant.formula") ) +
+  theme(
+    axis.text.x = element_text(color = "black", family = "Arial", size = 11), 
+    axis.text.y = element_text(color = "black", family = "Arial", size = 11))
+
+
+# Check model 
+set.seed(12345)
+car::Anova(model)
+```
+
+
+
+g__Parabacteroides-g__Actinomyces time 12
+```{r}
+Edge_Table <- L_obj8[["Merged_Edge_Table"]]
+        
+# list to store all of the model data in
+node_results <- list()
+
+# Filter data to a timepoint of interest        
+edge_data_time_full <- Edge_Table %>% filter(Edge_Table[["Age"]] == 12)
+
+# Filter to an interaction of interest
+edge_data_time <- edge_data_time_full %>% filter(Interaction == "g__Parabacteroides-g__Actinomyces")
+dependent <- "diet"
+
+# Run the model
+formula <- as.formula(paste(dependent, "~Edge_weight"))
+set.seed(12345)
+model <- nnet::multinom(formula, data = edge_data_time, trace = FALSE)
+model_summary <- broom::tidy(model, conf.int = TRUE)
+model_summary$Interaction <- "g__Parabacteroides-g__Actinomyces"
+model_summary$Time_Level <- 12
+model_summary$Model_Type <- "Multinomial"
+model_summary$Model_SampleSize <- stats::nobs(model)
+node_results[[paste("g__Parabacteroides-g__Actinomyces", 12, sep = "_")]] <- model_summary
+
+
+# get probabilities
+set.seed(12345)
+predict(model, newdata = data.frame(Edge_weight = 2.5), type = 'probs')
+set.seed(12345)
+prob_effects <- ggeffect(model, terms = "Edge_weight[-2:2,by=0.5]")
+
+# Graph probabilities
+ggplot(prob_effects) +
+  aes(x = x, y = predicted, fill = response.level, color = response.level) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 1/2) +
+  labs(x = 'g__Parabacteroides-g__Actinomyces Edge Weight', y = 'Predicted Probability') +
+  ylim(c(0, 1)) +
+  theme_classic() +
+  scale_color_manual(
+    values = c("#bc80bd", "#ffed6f", "#ccebc5"), 
+    name = "Infant Diet",
+    labels = c("Breast Milk" = "Breast.milk", 
+               "Experimental infant formula" = "Experimental.infant.formula", 
+               "Standard infant formula" = "Standard.infant.formula") ) +
+  scale_fill_manual(
+    values = c("#bc80bd", "#ffed6f", "#ccebc5"), 
+    name = "Infant Diet",
+    labels = c("Breast Milk" = "Breast.milk", 
+               "Experimental infant formula" = "Experimental.infant.formula", 
+               "Standard infant formula" = "Standard.infant.formula") ) +
+  theme(
+    axis.text.x = element_text(color = "black", family = "Arial", size = 11), 
+    axis.text.y = element_text(color = "black", family = "Arial", size = 11))
+
+set.seed(12345)
+car::Anova(model)
+```
+
+
+

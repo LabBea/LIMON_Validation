@@ -1,0 +1,890 @@
+---
+title: "Centrality Comparisons"
+output: html_notebook
+---
+
+
+In this script, we are going to run the LIMON pipeline on Dataset 1 + covariate effects. We will then compare the extracted centralities to the the original GLV data without covariates added and GLV data + covariates put through SPIEC-EASI without LIMON correction
+
+
+
+# 1. Load Library
+*** 
+Packages required to run the script
+```{r}
+library(tidyverse)
+library(igraph)
+library(NBZIMM)
+library(SpiecEasi)
+library(LIMON)
+library(here)
+library(lme4)
+library(Matrix)
+library(tscount)
+library(patchwork)
+library(MASS)
+library(matrixcalc)
+library(gridExtra)
+library(devtools)
+library(miaSim)
+library(reshape2)
+library(ggpubr)
+library(broom)
+library(ggnewscale)
+library(coin)
+library(parallel)
+library(ggradar)
+```
+
+
+
+# 2. Run LIMON on Dataset 1 + Covariates
+*** 
+
+
+## 2.1 - Prep the data
+
+Make LIMON Object
+```{r}
+SimData <- read.csv(here("Data", "GLV_SimData", "Dataset_1","GLV_Cov.csv"))
+
+SimData <- column_to_rownames(SimData, "X")
+
+# metadata
+meta_data <- SimData[,1:5]
+meta_data$Time <- as.numeric(meta_data$Time)
+meta_data$BMI <- as.numeric(meta_data$BMI)
+meta_data$Age <- as.numeric(meta_data$Age)
+
+# Option to shorten to run faster
+limon_meta <- meta_data #%>% filter(Time %in% c(1,2,3,4,5))
+
+# Count data
+limon_counts <- as.matrix(SimData[,6:55])
+
+# sort rows
+limon_counts <- limon_counts[rownames(limon_meta),]
+
+  
+L_obj <- LIMON_Obj(Counts = limon_counts, 
+                           SampleData = limon_meta)
+```
+
+
+
+## 2.2 - Remove covariate effects
+Distribution Fitting and check
+```{r}
+# Set seed
+set.seed(12345)
+# Fit the distribution/remove covariates
+#################################################################################
+L_obj2 <- LIMON_DistrFit(Obj = L_obj, 
+                           Time = "Time", 
+                           Subject = "ID", 
+                           Covariates = c("Sex", "BMI", "Age"),
+                           model = "Sex",
+                           distribution = "LMM")
+
+```
+
+
+## 2.3 - Fit Networks
+
+Networks per timepoint
+```{r}
+set.seed(12345)
+# SPIEC-EASI per time
+# Set seed
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+#infer network
+L_obj3 <- LIMON_NetInf_Time(Obj = L_obj2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+# Check Network stability is greater than 0.05 for some time points
+getStability(L_obj3 [["SpiecEasi_Time"]][["Net_1"]])
+getStability(L_obj3 [["SpiecEasi_Time"]][["Net_2"]])
+getStability(L_obj3 [["SpiecEasi_Time"]][["Net_3"]])
+
+
+# Print Networks
+L_obj4 <- LIMON_Edges_Networks(L_obj3, threshold = 0.02, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+```
+
+
+Individualized Networks
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+
+# individual Networks
+L_obj6 <- LIMON_IndNet(Obj = L_obj4, method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Save the object
+saveRDS(L_obj6, here("Output","Dataset_1", "Dataset1_Lionness.rds"))
+```
+
+
+# 3. Run network inference for Dataset 1 no covariates
+*** 
+
+## 3.1 - Raw Data
+SPIEC-EASI Networks of the Raw Data without covariates. We read in the data and then assign it to a downstream LIMOn object to run SPIEC-EASI across all the timepoints but bypassing the network inference step
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_1","GLV.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_sim2
+L_obj_sim2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_sim2
+for (i in 1:10) {
+  L_obj_sim2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+```
+
+## 3.2- Fit Networks
+
+
+Networks per timepoint
+```{r}
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+# SPIEC-EASI per time
+L_obj_sim3 <- LIMON_NetInf_Time(Obj = L_obj_sim2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_sim4 <- LIMON_Edges_Networks(L_obj_sim3, threshold = 0.02, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+```
+
+
+Individualized Networks
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+
+# individual Networks
+L_obj_sim6 <- LIMON_IndNet(Obj = L_obj_sim4, method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Save the object
+saveRDS(L_obj_sim6, here("Output","Dataset_1", "Dataset1_NoCov_Lionness.rds"))
+```
+
+
+# 4. Run SPIEC-EASI on Dataset 1 + Covariates
+*** 
+
+## 4.1 - Raw Data
+Similar to process for original networks, except now we will run it on covariate conflated data. 
+```{r}
+# Make fake LIMON Object to Pass to Network Inference Steps
+##################################################################################
+original_data <- read.csv(here("Data", "GLV_SimData", "Dataset_1","GLV_Cov.csv"))
+original_data <- original_data %>% column_to_rownames("X")
+
+# Loop through the time points, filter data, and remove metadata
+counts_list <- list()
+for (i in 1:10) {
+  filtered_counts <- original_data %>% filter(Time == i)
+  counts_list[[i]] <- round(filtered_counts[, 6:55])
+}
+
+# Initialize L_obj_cov2
+L_obj_cov2 <- L_obj2
+
+# Assign the processed data to the corresponding slots in L_obj_cov2
+for (i in 1:10) {
+  L_obj_cov2[["Corrected_Counts_Time"]][[paste0("Corrected_Counts_", i)]] <- counts_list[[i]]
+}
+```
+
+## 4.2- Fit Networks
+
+
+Networks per timepoint
+```{r}
+# Network Inference
+##################################################################################
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+# SPIEC-EASI per time
+L_obj_cov3 <- LIMON_NetInf_Time(Obj = L_obj_cov2, 
+                                         method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.select=TRUE, 
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Print Networks
+L_obj_cov4 <- LIMON_Edges_Networks(L_obj_cov3, threshold = 0.02, vertex.size = 3, 
+                                       vertex.label.cex = 8, vertex.label.color = "black")
+
+```
+
+
+Individualized Networks
+```{r}
+# Set seed
+set.seed(12345)
+pseed <- list(rep.num=50, seed=10010)
+
+# Number of cores to use
+options(mc.cores = 4) 
+
+
+# individual Networks
+L_obj_cov6 <- LIMON_IndNet(Obj = L_obj_cov4, method = "glasso", 
+                                         sel.criterion = "bstars",
+                                         lambda.min.ratio = 0.01,
+                                         pulsar.params=pseed,
+                                         nlambda = 200)
+
+
+# Save the object
+saveRDS(L_obj_cov6, here("Output","Dataset_1", "Dataset1_Cov_Lionness.rds"))
+```
+
+
+# 5. Compare Centralities among sections 2,3,4
+*** 
+
+
+## 5.1 Read back in Individualized Network Objects 
+
+LIMON Networks
+```{r}
+# Read back in the networks
+L_obj6 <- readRDS(here("Output","LIMON_obj", "Dataset1_Lionness.rds"))
+
+# Extract edges and centralities
+L_obj7<- LIMON_IndEdges(L_obj6, threshold = 0.02)
+L_obj8 <- LIMON_Centralities(L_obj7, threshold = 0.02)
+
+# Re assign Environment Sample Data to covariate object
+LIMON_SD <- LIMON_SampleData
+
+# Add method Column
+LIMON_SD$Method <- "LIMON"
+```
+
+
+No Covariate inflated SPIEC-EASI Networks
+```{r}
+# Read back in the networks
+L_obj_sim6 <- readRDS(here("Output","LIMON_obj", "Dataset1_NoCov_Lionness.rds"))
+
+# Extract edges and centralities
+L_obj_sim7<- LIMON_IndEdges(L_obj_sim6, threshold = 0.02)
+L_obj_sim8 <- LIMON_Centralities(L_obj_sim7, threshold = 0.02)
+
+# Re assign Environment Sample Data to covariate object
+NoCov_SD <- LIMON_SampleData
+
+# Add method Column
+NoCov_SD$Method <- "True"
+```
+
+
+
+Covariate inflated SPIEC-EASI Networks
+```{r}
+# Read back in the networks
+L_obj_cov6 <- readRDS(here("Output","LIMON_obj", "Dataset1_Cov_Lionness.rds"))
+
+# Extract edges and centralities
+L_obj_cov7<- LIMON_IndEdges(L_obj_cov6, threshold = 0.02)
+L_obj_cov8 <- LIMON_Centralities(L_obj_cov7, threshold = 0.02)
+
+# Re assign Environment Sample Data to covariate object
+Cov_SD <- LIMON_SampleData
+
+# Add method Column
+Cov_SD$Method <- "SPIEC-EASI"
+```
+
+
+
+## 5.2 Compare centralities 
+
+Combined data
+```{r}
+# Merge data together
+Centrality_data <- rbind(LIMON_SD, Cov_SD, NoCov_SD)
+```
+
+
+### 5.2.1 Degree Centrality
+
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Centrality_data$DegreeCentrality)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Centrality_data$DegreeCentrality,breaks=100, 
+     main = "Distribution of Degree", 
+     xlab = "Degree", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 2, y = 100, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+
+Calculate the stats and summarize the data
+```{r}
+# Run Pairwise Wilcox Tests
+###############################################################################
+# For Sex = 0
+Centrality_data0 <- Centrality_data %>% filter(Sex==0)
+wilcox_res <- pairwise.wilcox.test(Centrality_data0$DegreeCentrality, 
+                                    Centrality_data0$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values0 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# For Sex = 1
+Centrality_data1 <- Centrality_data %>% filter(Sex==1)
+wilcox_res <- pairwise.wilcox.test(Centrality_data1$DegreeCentrality, 
+                                    Centrality_data1$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values1 <- as.data.frame(as.table(wilcox_res$p.value))
+
+
+# Re-format the data
+###############################################################################
+Plot_data <- Centrality_data %>%
+  group_by(Sex, Method) %>%
+  summarize(mean_DegreeCentrality = mean(DegreeCentrality, na.rm = TRUE),
+            se_DegreeCentrality = sd(DegreeCentrality, na.rm = TRUE) / sqrt(n()))
+
+```
+
+
+
+Plot the findings
+```{r}
+# Create the bar plot with significance bars
+ggplot(Plot_data, aes(x = factor(Sex), y = mean_DegreeCentrality, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Sex", y = "Mean Degree Centrality") +
+  ylim(0, 4) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14)) +
+  
+  # Add error bars
+  geom_errorbar(aes(ymin = mean_DegreeCentrality - se_DegreeCentrality, 
+                    ymax = mean_DegreeCentrality + se_DegreeCentrality), 
+                    width = 0.2, position = position_dodge(0.9)) +
+  
+  # Manually Add significance bars
+ geom_signif(
+    annotations = c("***"),
+    y_position = c(3.0,3.15,3.4,3.0,3.15,3.4),  
+    xmin = c(0.75,1,0.75,1.75,2,1.75), 
+    xmax = c(1,1.25,1.25,2,2.25,2.25),
+    tip_length = 0.03
+  ) +
+  
+  # Add a legend to describe all the colors
+  scale_fill_manual(name = "Network", 
+                    values = c("LIMON" = "orange", 
+                               "SPIEC-EASI" = "blue", 
+                               "True" = "grey"),
+                    labels = c("LIMON" = "LIMON", 
+                               "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                               "True" = "SPIEC-EASI - No Covariates"))
+
+```
+
+
+
+### 5.2.2 Closeness Centrality
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Centrality_data$ClosenessCentrality)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Centrality_data$ClosenessCentrality,breaks=100, 
+     main = "Distribution of Closeness", 
+     xlab = "Closeness", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 0.3, y = 60, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+
+Calculate the stats and summarize the data
+```{r}
+# Run Pairwise Wilcox Tests
+###############################################################################
+# For Sex = 0
+wilcox_res <- pairwise.wilcox.test(Centrality_data0$ClosenessCentrality, 
+                                    Centrality_data0$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values0 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# For Sex = 1
+wilcox_res <- pairwise.wilcox.test(Centrality_data1$ClosenessCentrality, 
+                                    Centrality_data1$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values1 <- as.data.frame(as.table(wilcox_res$p.value))
+
+
+
+# Re-format the data
+###############################################################################
+Plot_data <- Centrality_data %>%
+  group_by(Sex, Method) %>%
+  summarize(mean_ClosenessCentrality = mean(ClosenessCentrality, na.rm = TRUE),
+            se_ClosenessCentrality = sd(ClosenessCentrality, na.rm = TRUE) / sqrt(n()))
+
+```
+
+
+Plot the findings
+```{r}
+# Create the bar plot
+###############################################################################
+ggplot(Plot_data, aes(x = factor(Sex), y = mean_ClosenessCentrality, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Sex", y = "Mean Closeness Centrality") +
+  ylim(0, 1) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 16),
+        axis.text.y = element_text(family = "arial", color = "black", size = 16),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14)) +
+  
+  # Add error bars
+  geom_errorbar(aes(ymin = mean_ClosenessCentrality - se_ClosenessCentrality, 
+                    ymax = mean_ClosenessCentrality + se_ClosenessCentrality), 
+                width = 0.2, position = position_dodge(0.9)) +
+  
+    # Manually Add significance bars
+ geom_signif(
+    annotations = c("***"),
+    y_position = c(0.6,0.65,0.7,0.6,0.65,0.7),  
+    xmin = c(0.75,1,0.75,1.75,2,1.75), 
+    xmax = c(1,1.25,1.25,2,2.25,2.25),
+    tip_length = 0.03
+  ) +
+  
+  
+  # Add a legend to describe all the colors
+  scale_fill_manual(name = "Network", 
+                    values = c("LIMON" = "orange", 
+                               "SPIEC-EASI" = "blue", 
+                               "True" = "grey"),
+                    labels = c("LIMON" = "LIMON", 
+                               "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                               "True" = "SPIEC-EASI - No Covariates"))
+
+```
+
+
+
+### 5.2.3 Betweenness Centrality
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Centrality_data$BetweennessCentrality)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Centrality_data$BetweennessCentrality,breaks=100, 
+     main = "Distribution of Betweenness", 
+     xlab = "Betweenness", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 2, y = 100, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+
+Calculate the stats and summarize the data
+```{r}
+# Run Pairwise Wilcox Tests
+###############################################################################
+# For Sex = 0
+wilcox_res <- pairwise.wilcox.test(Centrality_data0$ClosenessCentrality, 
+                                    Centrality_data0$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values0 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# For Sex = 1
+wilcox_res <- pairwise.wilcox.test(Centrality_data1$ClosenessCentrality, 
+                                    Centrality_data1$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values1 <- as.data.frame(as.table(wilcox_res$p.value))
+
+
+# Re-format the data
+###############################################################################
+Plot_data <- Centrality_data %>%
+  group_by(Sex, Method) %>%
+  summarize(mean_BetweennessCentrality = mean(BetweennessCentrality, na.rm = TRUE),
+            se_BetweennessCentrality = sd(BetweennessCentrality, na.rm = TRUE) / sqrt(n()))
+```
+
+
+
+Plot the findings
+```{r}
+# Create the bar plot
+###############################################################################
+ggplot(Plot_data, aes(x = factor(Sex), y = mean_BetweennessCentrality, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Sex", y = "Mean Betweenness Centrality") +
+  ylim(0, 1) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14)) +
+  
+  # Add error bars
+  geom_errorbar(aes(ymin = mean_BetweennessCentrality - se_BetweennessCentrality, 
+                    ymax = mean_BetweennessCentrality + se_BetweennessCentrality), 
+                width = 0.2, position = position_dodge(0.9)) +
+  
+      # Manually Add significance bars
+ geom_signif(
+    annotations = c("***"),
+    y_position = c(0.9,0.95,1,0.92,0.95,1),  
+    xmin = c(0.75,1,0.75,1.75,2,1.75), 
+    xmax = c(1,1.25,1.25,2,2.25,2.25),
+    tip_length = 0.03
+  ) +
+  
+  
+  # Add a legend to describe all the colors
+  scale_fill_manual(name = "Network", 
+                    values = c("LIMON" = "orange", 
+                               "SPIEC-EASI" = "blue", 
+                               "True" = "grey"),
+                    labels = c("LIMON" = "LIMON", 
+                               "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                               "True" = "SPIEC-EASI - No Covariates"))
+
+```
+
+
+
+### 5.2.4 Eigen Centrality
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Centrality_data$EigenCentrality)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Centrality_data$EigenCentrality, breaks=100, 
+     main = "Distribution of Eigen", 
+     xlab = "Eigen", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 6, y = 80, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+
+Calculate the stats and summarize the data
+```{r}
+# Run Pairwise Wilcox Tests
+###############################################################################
+# For Sex = 0
+wilcox_res <- pairwise.wilcox.test(Centrality_data0$EigenCentrality, 
+                                    Centrality_data0$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values0 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# For Sex = 1
+wilcox_res <- pairwise.wilcox.test(Centrality_data1$EigenCentrality, 
+                                    Centrality_data1$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values1 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# Re-format the data
+###############################################################################
+Plot_data <- Centrality_data %>%
+  group_by(Sex, Method) %>%
+  summarize(mean_EigenCentrality = mean(EigenCentrality, na.rm = TRUE),
+            se_EigenCentrality = sd(EigenCentrality, na.rm = TRUE) / sqrt(n()))
+
+```
+
+
+Plot the findings
+```{r}
+# Create the bar plot
+###############################################################################
+ggplot(Plot_data, aes(x = factor(Sex), y = mean_EigenCentrality, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Sex", y = "Mean Eigen Centrality") +
+  ylim(0, 12) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14)) +
+  
+  # Add error bars
+  geom_errorbar(aes(ymin = mean_EigenCentrality - se_EigenCentrality, 
+                    ymax = mean_EigenCentrality + se_EigenCentrality), 
+                width = 0.2, position = position_dodge(0.9)) +
+  
+        # Manually Add significance bars
+ geom_signif(
+    annotations = c("***"),
+    y_position = c(10.5,11,11.6,10.5,11,11.6),  
+    xmin = c(0.75,1,0.75,1.75,2,1.75), 
+    xmax = c(1,1.25,1.25,2,2.25,2.25),
+    tip_length = 0.03
+  ) +
+  
+  
+  # Add a legend to describe all the colors
+  scale_fill_manual(name = "Network", 
+                    values = c("LIMON" = "orange", 
+                               "SPIEC-EASI" = "blue", 
+                               "True" = "grey"),
+                    labels = c("LIMON" = "LIMON", 
+                               "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                               "True" = "SPIEC-EASI - No Covariates"))
+
+```
+
+
+
+### 5.2.5 Communities
+
+Check normalcy to determine if t-test or if wilcox rank sum
+```{r}
+# Step 1 - Run Shapiro Wilks to test for normalacy of the data
+#############################################################################
+shapiro_result <- shapiro.test(Centrality_data$Communities)
+p_value <- shapiro_result$p.value
+
+# Step 2 - Print p-value on the histogram
+#############################################################################
+# Create the histogram plot
+hist(Centrality_data$Communities, breaks=100, 
+     main = "Distribution of Communities", 
+     xlab = "Communities", ylab = "Frequency")
+# Add the p-value annotation
+text(x = 35, y = 200, 
+     labels = paste("Shapiro-Wilk p-value: ", p_value))
+
+```
+
+
+Calculate the stats and summarize the data
+```{r}
+# For Sex = 0
+wilcox_res <- pairwise.wilcox.test(Centrality_data0$Communities, 
+                                    Centrality_data0$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values0 <- as.data.frame(as.table(wilcox_res$p.value))
+
+# For Sex = 1
+wilcox_res <- pairwise.wilcox.test(Centrality_data1$Communities, 
+                                    Centrality_data1$Method, 
+                                    p.adjust.method = "bonferroni")
+
+# Extract the p-values and convert to a dataframe
+p_values1 <- as.data.frame(as.table(wilcox_res$p.value))
+
+
+# Re-format the data
+###############################################################################
+Plot_data <- Centrality_data %>%
+  group_by(Sex, Method) %>%
+  summarize(mean_Communities = mean(Communities, na.rm = TRUE),
+            se_Communities = sd(Communities, na.rm = TRUE) / sqrt(n()))
+
+
+```
+
+
+Plot the findings
+```{r}
+# Create the bar plot
+###############################################################################
+ggplot(Plot_data, aes(x = factor(Sex), y = mean_Communities, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  labs(x = "Sex", y = "Mean Communities") +
+  ylim(0, 50) +
+  theme_classic() +
+  theme(axis.text.x = element_text(family = "arial", color = "black", size = 14),
+        axis.text.y = element_text(family = "arial", color = "black", size = 14),
+        axis.title.x = element_text(family = "arial", color = "black", size = 14),
+        axis.title.y = element_text(family = "arial", color = "black", size = 14)) +
+  
+  # Add error bars
+  geom_errorbar(aes(ymin = mean_Communities - se_Communities, 
+                    ymax = mean_Communities + se_Communities), 
+                width = 0.2, position = position_dodge(0.9)) +
+  
+          # Manually Add significance bars
+ geom_signif(
+    annotations = c("***"),
+    y_position = c(38,40,43,38,40,43),  
+    xmin = c(0.75,1,0.75,1.75,2,1.75), 
+    xmax = c(1,1.25,1.25,2,2.25,2.25),
+    tip_length = 0.03
+  ) +
+  
+  # Add a legend to describe all the colors
+  scale_fill_manual(name = "Network", 
+                    values = c("LIMON" = "orange", 
+                               "SPIEC-EASI" = "blue", 
+                               "True" = "grey"),
+                    labels = c("LIMON" = "LIMON", 
+                               "SPIEC-EASI" = "SPIEC-EASI + Covariates", 
+                               "True" = "SPIEC-EASI - No Covariates"))
+
+```
+
+
+# 6. Radar Plots
+
+## 6.1 - Centrality Data
+
+```{r}
+# Switch to wide fromat
+Centrality_wide <- Centrality_data %>%
+  # Center values between 0 and 1
+  mutate(across(6:10, ~ ( . - min(.) ) / ( max(.) - min(.) ))) %>%
+  # Aggregate to totals
+  group_by(Method, Sex) %>%
+  summarise(across(everything(), \(x) mean(x, na.rm = TRUE)), .groups = "drop") %>%  
+  dplyr::select(-c(Sex, Time, ID, Age, BMI)) %>%
+  dplyr::rename("Degree" = "DegreeCentrality", 
+                "Closeness" = "ClosenessCentrality",
+                "Betweenness" = "BetweennessCentrality",
+                "Eigenvector" = "EigenCentrality") %>%
+  mutate(Method = case_when(Method == "True" ~ "SPIEC-EASI - No Covariates",
+                             Method == "LIMON" ~ "LIMON",
+                             Method == "SPIEC-EASI" ~ "SPIEC-EASI + Covariates"))
+
+
+
+# Radar Plot
+ggradar(Centrality_wide, font.radar = "Arial",
+        legend.position = "right", 
+        base.size = 18,
+        group.colours = c("orange","grey","blue")) 
+```
+
+
+
+
+
+
+
+
+
+

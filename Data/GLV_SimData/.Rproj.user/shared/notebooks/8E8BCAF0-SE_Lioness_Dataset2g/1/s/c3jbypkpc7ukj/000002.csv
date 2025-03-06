@@ -1,0 +1,50 @@
+"1","
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuIyBDb21iaW5lIHRoZSBkYXRhXG4jIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjXG5Db21iaW5lZF9kYXRhIDwtIG1lcmdlKFVuYWx0ZXJlZF9lZGdlcywgQWx0ZXJlZF9kYXRhLCBcbiAgICAgICAgICAgICAgICAgICAgICAgYnkgPSBjKFwiU2FtcGxlSURcIiwgXCJTb3VyY2VcIiwgXCJTaW5rXCIsIFwiSURcIikpXG5cbkNvbWJpbmVkX2RhdGEkU2FtcGxlSUQgPC0gZ3N1YihcIl9UaW1lMlwiLCBcIlwiLCBDb21iaW5lZF9kYXRhJFNhbXBsZUlEKVxuXG4jIGNyZWF0ZSBhIGRpZmZlcmVuY2UgY29sdW1uXG5Db21iaW5lZF9kYXRhJEVkZ2VfZGlmZiA8LSBDb21iaW5lZF9kYXRhJEVkZ2Vfd2VpZ2h0IC0gQ29tYmluZWRfZGF0YSRBbHRlcmVkX0VkZ2Vfd2VpZ2h0XG5cbiNTb3J0IGJ5IGRpZmZlcmVuY2VcbkNvbWJpbmVkX2RhdGFfc29ydGVkZWRnZSA8LSBDb21iaW5lZF9kYXRhICU+JVxuICBhcnJhbmdlKGRlc2MoYWJzKEVkZ2VfZGlmZikpKVxuXG5cbiMgRmlsdGVyIHRvIHNwZWNpZXMgMTMgYW5kIGNoZWNrXG5Db21iaW5lZF8xMyA8LSBDb21iaW5lZF9kYXRhICU+JSBmaWx0ZXIoU2luayA9PSBcInNwMTNcIilcbkNvbWJpbmVkXzEzX3NvcnRlZCA8LSBDb21iaW5lZF8xMyAlPiVcbiAgYXJyYW5nZShkZXNjKGFicyhFZGdlX2RpZmYpKSlcblxuYGBgIn0= -->
+
+```r
+# Combine the data
+#####################################
+Combined_data <- merge(Unaltered_edges, Altered_data, 
+                       by = c(\"SampleID\", \"Source\", \"Sink\", \"ID\"))
+
+Combined_data$SampleID <- gsub(\"_Time2\", \"\", Combined_data$SampleID)
+
+# create a difference column
+Combined_data$Edge_diff <- Combined_data$Edge_weight - Combined_data$Altered_Edge_weight
+
+#Sort by difference
+Combined_data_sortededge <- Combined_data %>%
+  arrange(desc(abs(Edge_diff)))
+
+
+# Filter to species 13 and check
+Combined_13 <- Combined_data %>% filter(Sink == \"sp13\")
+Combined_13_sorted <- Combined_13 %>%
+  arrange(desc(abs(Edge_diff)))
+
+```
+
+<!-- rnb-source-end -->
+"
+"0","```r
+# Combine the data
+#####################################
+Combined_data <- merge(Unaltered_edges, Altered_data, 
+                       by = c(\"SampleID\", \"Source\", \"Sink\", \"ID\"))
+
+Combined_data$SampleID <- gsub(\"_Time2\", \"\", Combined_data$SampleID)
+
+# create a difference column
+Combined_data$Edge_diff <- Combined_data$Edge_weight - Combined_data$Altered_Edge_weight
+
+#Sort by difference
+Combined_data_sortededge <- Combined_data %>%
+  arrange(desc(abs(Edge_diff)))
+
+
+# Filter to species 13 and check
+Combined_13 <- Combined_data %>% filter(Sink == \"sp13\")
+Combined_13_sorted <- Combined_13 %>%
+  arrange(desc(abs(Edge_diff)))
+
+```"
